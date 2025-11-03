@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .providers import SkeletonProvider, SkeletonData
-from .transports import SkeletonTransport
+from .providers import SkeletonProvider, SkeletonData, MediaPipeSkeletonProvider
+from .transports import SkeletonTransport, WebSocketSkeletonTransport
 
 LOGGER = logging.getLogger(__name__)
 
@@ -84,13 +84,24 @@ class PoseCaptureApp:
         return data
 
 
-async def main(config: CaptureConfig) -> None:
+provider = MediaPipeSkeletonProvider(model_complexity=1)
+transport = WebSocketSkeletonTransport(uri="ws://localhost:9000")
+
+config = CaptureConfig(
+    provider=provider,
+    transport=transport,
+    frame_interval=1/60,  # 60FPS 相当
+    calibration_file=Path("calibration.json"),
+    metadata={"session": "demo_run"},
+)
+
+async def main() -> None:
     """Helper to run the app until interrupted."""
     async with PoseCaptureApp(config) as app:
-        try:
-            await app.run()
-        except asyncio.CancelledError:  # pragma: no cover - normal shutdown
-            LOGGER.info("Pose capture cancelled")
+        await app.run()
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 
 if __name__ == "__main__":  # pragma: no cover - manual invocation
@@ -105,3 +116,4 @@ if __name__ == "__main__":  # pragma: no cover - manual invocation
     args = parser.parse_args()
 
     raise SystemExit("Provider selection must be implemented by the integrator.")
+
