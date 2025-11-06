@@ -32,11 +32,9 @@ namespace PoseRuntime
         [FormerlySerializedAs("headLeftJoint")] public string _headLeftJoint = "LEFT_EAR";
         [FormerlySerializedAs("headRightJoint")] public string _headRightJoint = "RIGHT_EAR";
         [FormerlySerializedAs("headBaseJoint")] public string _headBaseJoint = "NECK";
-        [FormerlySerializedAs("headAxisFlip")] public Vector3 _headAxisFlip = Vector3.one;
-        [FormerlySerializedAs("useAdvancedTorsoOrientation")] public bool _useAdvancedTorsoOrientation = true;
-        [FormerlySerializedAs("torsoAxisFlip")] public Vector3 _torsoAxisFlip = Vector3.one;
         [FormerlySerializedAs("autoPopulate")] public bool _autoPopulate = true;
         [FormerlySerializedAs("debugLogging")] public bool _debugLogging = false;
+        [FormerlySerializedAs("animationClipPlayer")] public AnimationClipRecording.HumanoidAnimationClipPlayer _animationClipPlayer;
 
         [Serializable]
         public class HumanoidBoneMapping
@@ -81,6 +79,11 @@ namespace PoseRuntime
             if (_animator == null)
             {
                 _animator = GetComponentInChildren<Animator>();
+            }
+
+            if (_animationClipPlayer == null)
+            {
+                _animationClipPlayer = GetComponent<AnimationClipRecording.HumanoidAnimationClipPlayer>();
             }
 
             if (_animator != null)
@@ -150,6 +153,11 @@ namespace PoseRuntime
 
         private void LateUpdate()
         {
+            if (_animationClipPlayer != null && _animationClipPlayer.IsPlaying)
+            {
+                return;
+            }
+
             if (!_hasSample || _animator == null)
             {
                 return;
@@ -206,11 +214,6 @@ namespace PoseRuntime
                 }
 
                 if (mapping._bone == HumanBodyBones.Head && TryApplyAdvancedHeadOrientation(mapping, boneTransform))
-                {
-                    continue;
-                }
-
-                if (IsTorsoBone(mapping._bone) && TryApplyAdvancedTorsoOrientation(mapping, boneTransform))
                 {
                     continue;
                 }
@@ -568,14 +571,83 @@ namespace PoseRuntime
                 return false;
             }
 
-            return TryApplyAdvancedOrientation(mapping, boneTransform, forward, up, right, _headAxisFlip, "head");
+            forward = (-forward).normalized;
+            up = (-up).normalized;
+            right = (-right).normalized;
+            if (forward.sqrMagnitude < 1e-6f || up.sqrMagnitude < 1e-6f)
+            {
+                return false;
+            }
+
+            var restForward = mapping._restDirection;
+            if (restForward.sqrMagnitude < 1e-6f)
+            {
+                restForward = mapping._restRotation * Vector3.forward;
+            }
+            if (restForward.sqrMagnitude < 1e-6f)
+            {
+                restForward = Vector3.forward;
+            }
+
+            var restUp = mapping._restRotation * Vector3.up;
+            if (restUp.sqrMagnitude < 1e-6f)
+            {
+                restUp = Vector3.up;
+            }
+
+            restForward = restForward.normalized;
+            restUp = restUp.normalized;
+
+            if (Vector3.Dot(forward, restForward) < 0f)
+            {
+                forward = -forward;
+            }
+
+            if (Vector3.Dot(up, restUp) < 0f)
+            {
+                up = -up;
+            }
+
+            var deltaForward = Quaternion.FromToRotation(restForward, forward);
+            var rotatedUp = deltaForward * restUp;
+            var projectedRotatedUp = Vector3.ProjectOnPlane(rotatedUp, forward);
+            if (projectedRotatedUp.sqrMagnitude < 1e-6f)
+            {
+                projectedRotatedUp = rotatedUp;
+            }
+            projectedRotatedUp = projectedRotatedUp.normalized;
+
+            var projectedTargetUp = Vector3.ProjectOnPlane(up, forward);
+            if (projectedTargetUp.sqrMagnitude < 1e-6f)
+            {
+                projectedTargetUp = up;
+            }
+            projectedTargetUp = projectedTargetUp.normalized;
+
+            var twist = Quaternion.FromToRotation(projectedRotatedUp, projectedTargetUp);
+            var targetRotation = twist * deltaForward * mapping._restRotation * Quaternion.Euler(mapping._rotationOffset);
+
+            mapping._lastDirection = forward;
+            mapping._hasDirection = true;
+
+            boneTransform.rotation = Quaternion.Slerp(
+                boneTransform.rotation,
+                targetRotation,
+                Time.deltaTime * _rotationLerp);
+
+            if (_debugLogging)
+            {
+                Debug.Log($"HumanoidPoseApplier advanced head rotation -> {targetRotation.eulerAngles}");
+            }
+
+            return true;
         }
 
         private bool TryComputeHeadOrientation(out Vector3 forward, out Vector3 up, out Vector3 right)
         {
-            forward = Vector3.zero;
-            up = Vector3.zero;
-            right = Vector3.zero;
+            forward = Vector3.forward;
+            up = Vector3.up;
+            right = Vector3.right;
 
             if (string.IsNullOrEmpty(_headLeftJoint) || string.IsNullOrEmpty(_headRightJoint))
             {
@@ -597,234 +669,56 @@ namespace PoseRuntime
 
             var earCenter = (leftEar + rightEar) * 0.5f;
 
-            var hasBase = false;
-            var baseJoint = Vector3.zero;
-            if (!string.IsNullOrEmpty(_headBaseJoint))
+            Vector3 forwardReference = Vector3.zero;
+            if (!string.IsNullOrEmpty(_headForwardJoint) && TryGetJointPosition(_headForwardJoint, out var forwardJoint))
             {
-                hasBase = TryGetJointPosition(_headBaseJoint, out baseJoint);
-            }
-            var baseVector = hasBase ? (earCenter - baseJoint) : Vector3.zero;
-
-            Vector3 forwardCandidate = Vector3.zero;
-            if (!string.IsNullOrEmpty(_headForwardJoint) &&
-                TryGetJointPosition(_headForwardJoint, out var forwardJoint))
-            {
-                forwardCandidate = forwardJoint - earCenter;
-                forwardCandidate = Vector3.ProjectOnPlane(forwardCandidate, right);
+                forwardReference = forwardJoint - earCenter;
+                if (forwardReference.sqrMagnitude < 1e-6f)
+                {
+                    forwardReference = forwardJoint - leftEar;
+                }
             }
 
-            if (forwardCandidate.sqrMagnitude < 1e-6f && hasBase)
+            if (forwardReference.sqrMagnitude < 1e-6f && !string.IsNullOrEmpty(_headBaseJoint) &&
+                TryGetJointPosition(_headBaseJoint, out var baseJoint))
             {
-                forwardCandidate = Vector3.Cross(right, baseVector);
+                forwardReference = baseJoint - earCenter;
             }
 
-            if (forwardCandidate.sqrMagnitude < 1e-6f)
+            if (forwardReference.sqrMagnitude < 1e-6f)
             {
-                forwardCandidate = Vector3.Cross(right, Vector3.up);
+                return false;
             }
+            forwardReference = forwardReference.normalized;
 
-            if (forwardCandidate.sqrMagnitude < 1e-6f)
-            {
-                forwardCandidate = Vector3.forward;
-            }
-
-            forward = forwardCandidate.normalized;
-
-            var upCandidate = Vector3.ProjectOnPlane(baseVector, right);
-            if (upCandidate.sqrMagnitude < 1e-6f)
-            {
-                upCandidate = Vector3.ProjectOnPlane(Vector3.up, right);
-            }
-            if (upCandidate.sqrMagnitude < 1e-6f)
-            {
-                upCandidate = Vector3.Cross(right, forward);
-            }
-
-            up = upCandidate.sqrMagnitude > 1e-6f ? upCandidate.normalized : Vector3.up;
-
-            right = Vector3.Cross(forward, up);
-            if (right.sqrMagnitude < 1e-6f)
-            {
-                right = Vector3.Cross(forward, Vector3.up);
-            }
-            right = right.sqrMagnitude > 1e-6f ? right.normalized : Vector3.right;
-
-            up = Vector3.Cross(right, forward);
+            up = Vector3.Cross(forwardReference, right);
             if (up.sqrMagnitude < 1e-6f)
             {
-                up = Vector3.up;
-            }
-            else
-            {
-                up = up.normalized;
-            }
-
-            return forward.sqrMagnitude > 1e-6f && up.sqrMagnitude > 1e-6f && right.sqrMagnitude > 1e-6f;
-        }
-
-        private bool TryApplyAdvancedTorsoOrientation(HumanoidBoneMapping mapping, Transform boneTransform)
-        {
-            if (!_useAdvancedTorsoOrientation || !IsTorsoBone(mapping._bone))
-            {
-                return false;
-            }
-
-            if (!TryGetJointPosition("LEFT_HIP", out var leftHip) ||
-                !TryGetJointPosition("RIGHT_HIP", out var rightHip) ||
-                !TryGetJointPosition("LEFT_SHOULDER", out var leftShoulder) ||
-                !TryGetJointPosition("RIGHT_SHOULDER", out var rightShoulder))
-            {
-                return false;
-            }
-
-            var hipCenter = (leftHip + rightHip) * 0.5f;
-            var shoulderCenter = (leftShoulder + rightShoulder) * 0.5f;
-
-            Vector3 right;
-            Vector3 up;
-
-            if (mapping._bone == HumanBodyBones.Hips)
-            {
-                right = rightHip - leftHip;
-                up = shoulderCenter - hipCenter;
-            }
-            else
-            {
-                right = rightShoulder - leftShoulder;
-                if (!TryGetJointPosition("NECK", out var neck))
+                if (!string.IsNullOrEmpty(_headBaseJoint) &&
+                    TryGetJointPosition(_headBaseJoint, out var baseJointAlt))
                 {
-                    neck = shoulderCenter + (shoulderCenter - hipCenter);
-                }
-                up = neck - shoulderCenter;
-                if (up.sqrMagnitude < 1e-6f)
-                {
-                    up = shoulderCenter - hipCenter;
+                    var fallback = baseJointAlt - earCenter;
+                    if (fallback.sqrMagnitude > 1e-6f)
+                    {
+                        up = Vector3.Cross(fallback.normalized, right);
+                    }
                 }
             }
 
             if (up.sqrMagnitude < 1e-6f)
             {
-                up = _rootRestUp;
-            }
-
-            if (right.sqrMagnitude < 1e-6f)
-            {
-                right = _rootRestRight;
-            }
-
-            var forward = Vector3.Cross(right, up);
-            if (forward.sqrMagnitude < 1e-6f)
-            {
-                forward = _rootRestForward;
-            }
-
-            return TryApplyAdvancedOrientation(mapping, boneTransform, forward, up, right, _torsoAxisFlip, "torso");
-        }
-
-        private bool TryApplyAdvancedOrientation(
-            HumanoidBoneMapping mapping,
-            Transform boneTransform,
-            Vector3 forward,
-            Vector3 up,
-            Vector3 right,
-            Vector3 axisFlip,
-            string label)
-        {
-            const float epsilon = 1e-6f;
-
-            if (forward.sqrMagnitude < epsilon || up.sqrMagnitude < epsilon || right.sqrMagnitude < epsilon)
-            {
                 return false;
-            }
-
-            forward = Vector3.Scale(forward, axisFlip);
-            up = Vector3.Scale(up, axisFlip);
-            right = Vector3.Scale(right, axisFlip);
-
-            if (forward.sqrMagnitude < epsilon)
-            {
-                return false;
-            }
-
-            forward = forward.normalized;
-
-            right = Vector3.ProjectOnPlane(right, forward);
-            if (right.sqrMagnitude < epsilon)
-            {
-                right = Vector3.Cross(forward, up);
-            }
-            if (right.sqrMagnitude < epsilon)
-            {
-                right = Vector3.Cross(forward, Vector3.up);
-            }
-            if (right.sqrMagnitude < epsilon)
-            {
-                return false;
-            }
-            right = right.normalized;
-
-            up = Vector3.Cross(right, forward);
-            if (up.sqrMagnitude < epsilon)
-            {
-                up = Vector3.ProjectOnPlane(up, forward);
-            }
-            if (up.sqrMagnitude < epsilon)
-            {
-                up = Vector3.up;
             }
             up = up.normalized;
 
-            var restRotation = mapping._restRotation;
-            var restForward = (restRotation * Vector3.forward).normalized;
-            var restUp = (restRotation * Vector3.up).normalized;
-
-            if (restForward.sqrMagnitude < epsilon)
+            forward = Vector3.Cross(right, up);
+            if (forward.sqrMagnitude < 1e-6f)
             {
-                restForward = Vector3.forward;
+                forward = forwardReference;
             }
-            if (restUp.sqrMagnitude < epsilon)
-            {
-                restUp = Vector3.up;
-            }
+            forward = forward.normalized;
 
-            if (Vector3.Dot(forward, restForward) < 0f)
-            {
-                forward = -forward;
-                right = -right;
-            }
-
-            if (Vector3.Dot(up, restUp) < 0f)
-            {
-                up = -up;
-            }
-
-            var restBasis = Quaternion.LookRotation(restForward, restUp);
-            var targetBasis = Quaternion.LookRotation(forward, up);
-            var delta = targetBasis * Quaternion.Inverse(restBasis);
-            var targetRotation = delta * restRotation * Quaternion.Euler(mapping._rotationOffset);
-
-            mapping._lastDirection = forward;
-            mapping._hasDirection = true;
-
-            boneTransform.rotation = Quaternion.Slerp(
-                boneTransform.rotation,
-                targetRotation,
-                Time.deltaTime * _rotationLerp);
-
-            if (_debugLogging)
-            {
-                Debug.Log($"HumanoidPoseApplier advanced {label} rotation for {mapping._bone}: {targetRotation.eulerAngles}");
-            }
-
-            return true;
-        }
-
-        private static bool IsTorsoBone(HumanBodyBones bone)
-        {
-            return bone == HumanBodyBones.Hips ||
-                   bone == HumanBodyBones.Spine ||
-                   bone == HumanBodyBones.Chest ||
-                   bone == HumanBodyBones.UpperChest;
+            return forward.sqrMagnitude > 1e-6f && up.sqrMagnitude > 1e-6f && right.sqrMagnitude > 1e-6f;
         }
 
         private void UpdateRootTransform()

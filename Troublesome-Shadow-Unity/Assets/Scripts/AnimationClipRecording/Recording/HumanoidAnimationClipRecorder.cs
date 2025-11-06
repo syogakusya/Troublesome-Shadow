@@ -196,22 +196,26 @@ namespace AnimationClipRecording
       if (_recordRootTransform)
       {
         var rootPath = GetRootPath();
-        var rootPositionCurve = new AnimationCurve();
-        var rootRotationCurve = new AnimationCurve();
-
-        foreach (var frame in _frames)
+        if (!string.IsNullOrEmpty(rootPath))
         {
-          rootPositionCurve.AddKey(frame.Time, frame.RootPosition.x);
-          rootRotationCurve.AddKey(frame.Time, frame.RootRotation.x);
+          clip.SetCurve(rootPath, typeof(Transform), "localPosition.x", CreateCurveForVector3X(_frames, f => f.RootPosition));
+          clip.SetCurve(rootPath, typeof(Transform), "localPosition.y", CreateCurveForVector3Y(_frames, f => f.RootPosition));
+          clip.SetCurve(rootPath, typeof(Transform), "localPosition.z", CreateCurveForVector3Z(_frames, f => f.RootPosition));
+          clip.SetCurve(rootPath, typeof(Transform), "localRotation.x", CreateCurveForQuaternionX(_frames, f => f.RootRotation));
+          clip.SetCurve(rootPath, typeof(Transform), "localRotation.y", CreateCurveForQuaternionY(_frames, f => f.RootRotation));
+          clip.SetCurve(rootPath, typeof(Transform), "localRotation.z", CreateCurveForQuaternionZ(_frames, f => f.RootRotation));
+          clip.SetCurve(rootPath, typeof(Transform), "localRotation.w", CreateCurveForQuaternionW(_frames, f => f.RootRotation));
         }
-
-        clip.SetCurve(rootPath, typeof(Transform), "localPosition.x", CreateCurveForVector3X(_frames, f => f.RootPosition));
-        clip.SetCurve(rootPath, typeof(Transform), "localPosition.y", CreateCurveForVector3Y(_frames, f => f.RootPosition));
-        clip.SetCurve(rootPath, typeof(Transform), "localPosition.z", CreateCurveForVector3Z(_frames, f => f.RootPosition));
-        clip.SetCurve(rootPath, typeof(Transform), "localRotation.x", CreateCurveForQuaternionX(_frames, f => f.RootRotation));
-        clip.SetCurve(rootPath, typeof(Transform), "localRotation.y", CreateCurveForQuaternionY(_frames, f => f.RootRotation));
-        clip.SetCurve(rootPath, typeof(Transform), "localRotation.z", CreateCurveForQuaternionZ(_frames, f => f.RootRotation));
-        clip.SetCurve(rootPath, typeof(Transform), "localRotation.w", CreateCurveForQuaternionW(_frames, f => f.RootRotation));
+        else
+        {
+          clip.SetCurve("", typeof(Transform), "localPosition.x", CreateCurveForVector3X(_frames, f => f.RootPosition));
+          clip.SetCurve("", typeof(Transform), "localPosition.y", CreateCurveForVector3Y(_frames, f => f.RootPosition));
+          clip.SetCurve("", typeof(Transform), "localPosition.z", CreateCurveForVector3Z(_frames, f => f.RootPosition));
+          clip.SetCurve("", typeof(Transform), "localRotation.x", CreateCurveForQuaternionX(_frames, f => f.RootRotation));
+          clip.SetCurve("", typeof(Transform), "localRotation.y", CreateCurveForQuaternionY(_frames, f => f.RootRotation));
+          clip.SetCurve("", typeof(Transform), "localRotation.z", CreateCurveForQuaternionZ(_frames, f => f.RootRotation));
+          clip.SetCurve("", typeof(Transform), "localRotation.w", CreateCurveForQuaternionW(_frames, f => f.RootRotation));
+        }
       }
 
       foreach (var kvp in _boneTransforms)
@@ -226,13 +230,28 @@ namespace AnimationClipRecording
         var bonePath = GetBonePath(transform);
         if (string.IsNullOrEmpty(bonePath))
         {
+          bonePath = transform.name;
+        }
+
+        bool hasBoneData = false;
+        foreach (var frame in _frames)
+        {
+          if (frame.BoneRotations.ContainsKey(bone))
+          {
+            hasBoneData = true;
+            break;
+          }
+        }
+
+        if (!hasBoneData)
+        {
           continue;
         }
 
-        clip.SetCurve(bonePath, typeof(Transform), "localRotation.x", CreateCurveForQuaternionX(_frames, f => f.BoneRotations[bone]));
-        clip.SetCurve(bonePath, typeof(Transform), "localRotation.y", CreateCurveForQuaternionY(_frames, f => f.BoneRotations[bone]));
-        clip.SetCurve(bonePath, typeof(Transform), "localRotation.z", CreateCurveForQuaternionZ(_frames, f => f.BoneRotations[bone]));
-        clip.SetCurve(bonePath, typeof(Transform), "localRotation.w", CreateCurveForQuaternionW(_frames, f => f.BoneRotations[bone]));
+        clip.SetCurve(bonePath, typeof(Transform), "localRotation.x", CreateCurveForQuaternionX(_frames, f => f.BoneRotations.ContainsKey(bone) ? f.BoneRotations[bone] : Quaternion.identity));
+        clip.SetCurve(bonePath, typeof(Transform), "localRotation.y", CreateCurveForQuaternionY(_frames, f => f.BoneRotations.ContainsKey(bone) ? f.BoneRotations[bone] : Quaternion.identity));
+        clip.SetCurve(bonePath, typeof(Transform), "localRotation.z", CreateCurveForQuaternionZ(_frames, f => f.BoneRotations.ContainsKey(bone) ? f.BoneRotations[bone] : Quaternion.identity));
+        clip.SetCurve(bonePath, typeof(Transform), "localRotation.w", CreateCurveForQuaternionW(_frames, f => f.BoneRotations.ContainsKey(bone) ? f.BoneRotations[bone] : Quaternion.identity));
       }
 
 #if UNITY_EDITOR
@@ -250,34 +269,73 @@ namespace AnimationClipRecording
       {
         return "";
       }
-      return "";
-    }
 
-    private string GetBonePath(Transform bone)
-    {
-      if (bone == null || bone == _animator.transform)
+      if (_animator.transform.parent == null)
       {
         return "";
       }
 
-      var path = "";
-      var current = bone;
-      var animatorRoot = _animator.transform;
+      return _animator.transform.name;
+    }
 
-      while (current != null && current != animatorRoot && current.parent != null)
+    private string GetBonePath(Transform bone)
+    {
+      if (bone == null)
       {
-        if (string.IsNullOrEmpty(path))
-        {
-          path = current.name;
-        }
-        else
-        {
-          path = current.name + "/" + path;
-        }
-        current = current.parent;
+        return "";
       }
 
-      return path;
+      if (bone == _animator.transform)
+      {
+        return GetRootPath();
+      }
+
+      var animatorRoot = _animator.transform;
+      if (animatorRoot.parent == null)
+      {
+        var path = "";
+        var current = bone;
+        while (current != null && current != animatorRoot && current.parent != null)
+        {
+          if (string.IsNullOrEmpty(path))
+          {
+            path = current.name;
+          }
+          else
+          {
+            path = current.name + "/" + path;
+          }
+          current = current.parent;
+          if (current == animatorRoot)
+          {
+            break;
+          }
+        }
+        return path;
+      }
+      else
+      {
+        var path = "";
+        var current = bone;
+        while (current != null && current != animatorRoot && current.parent != null)
+        {
+          if (string.IsNullOrEmpty(path))
+          {
+            path = current.name;
+          }
+          else
+          {
+            path = current.name + "/" + path;
+          }
+          current = current.parent;
+        }
+
+        if (!string.IsNullOrEmpty(path))
+        {
+          return GetRootPath() + "/" + path;
+        }
+        return path;
+      }
     }
 
     private AnimationCurve CreateCurveForVector3X(List<AnimationClipFrame> frames, Func<AnimationClipFrame, Vector3> getter)
@@ -379,18 +437,37 @@ namespace AnimationClipRecording
 
     private void SaveClipToJson(AnimationClip clip)
     {
-      var jsonData = AnimationClipConverter.ConvertToJson(clip, _frames);
-      var directory = Path.Combine(Application.persistentDataPath, _jsonOutputPath);
-      if (!Directory.Exists(directory))
+      try
       {
-        Directory.CreateDirectory(directory);
+        if (clip == null || _frames == null || _frames.Count == 0)
+        {
+          Debug.LogWarning("HumanoidAnimationClipRecorder: Cannot save JSON - clip or frames are null/empty");
+          return;
+        }
+
+        var jsonData = AnimationClipConverter.ConvertToJson(clip, _frames);
+        if (string.IsNullOrEmpty(jsonData) || jsonData == "{}")
+        {
+          Debug.LogWarning("HumanoidAnimationClipRecorder: JSON conversion returned empty data");
+          return;
+        }
+
+        var directory = Path.Combine(Application.persistentDataPath, _jsonOutputPath);
+        if (!Directory.Exists(directory))
+        {
+          Directory.CreateDirectory(directory);
+        }
+
+        var fileName = $"{_recordingName}_{DateTime.Now:yyyyMMdd_HHmmss}.json";
+        var filePath = Path.Combine(directory, fileName);
+        File.WriteAllText(filePath, jsonData);
+
+        Debug.Log($"HumanoidAnimationClipRecorder: Saved JSON to {filePath} ({_frames.Count} frames)");
       }
-
-      var fileName = $"{_recordingName}_{DateTime.Now:yyyyMMdd_HHmmss}.json";
-      var filePath = Path.Combine(directory, fileName);
-      File.WriteAllText(filePath, jsonData);
-
-      Debug.Log($"HumanoidAnimationClipRecorder: Saved JSON to {filePath}");
+      catch (Exception ex)
+      {
+        Debug.LogError($"HumanoidAnimationClipRecorder: Failed to save JSON: {ex.Message}\n{ex.StackTrace}");
+      }
     }
   }
 

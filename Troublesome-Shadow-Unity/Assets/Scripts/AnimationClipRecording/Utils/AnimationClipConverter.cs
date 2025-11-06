@@ -27,7 +27,14 @@ namespace AnimationClipRecording
     {
       public float Time;
       public RootTransformData RootTransform;
-      public Dictionary<string, BoneRotationData> BoneRotations = new Dictionary<string, BoneRotationData>();
+      public List<BoneRotationEntry> BoneRotations = new List<BoneRotationEntry>();
+    }
+
+    [Serializable]
+    public class BoneRotationEntry
+    {
+      public string BoneName;
+      public BoneRotationData Rotation;
     }
 
     [Serializable]
@@ -91,10 +98,14 @@ namespace AnimationClipRecording
         foreach (var kvp in frame.BoneRotations)
         {
           var boneName = kvp.Key.ToString();
-          frameData.BoneRotations[boneName] = new BoneRotationData
+          frameData.BoneRotations.Add(new BoneRotationEntry
           {
-            Rotation = new[] { kvp.Value.x, kvp.Value.y, kvp.Value.z, kvp.Value.w }
-          };
+            BoneName = boneName,
+            Rotation = new BoneRotationData
+            {
+              Rotation = new[] { kvp.Value.x, kvp.Value.y, kvp.Value.z, kvp.Value.w }
+            }
+          });
         }
 
         data.Frames.Add(frameData);
@@ -185,9 +196,9 @@ namespace AnimationClipRecording
         var boneNames = new HashSet<string>();
         foreach (var frame in data.Frames)
         {
-          foreach (var boneName in frame.BoneRotations.Keys)
+          foreach (var entry in frame.BoneRotations)
           {
-            boneNames.Add(boneName);
+            boneNames.Add(entry.BoneName);
           }
         }
 
@@ -200,9 +211,10 @@ namespace AnimationClipRecording
 
           foreach (var frame in data.Frames)
           {
-            if (frame.BoneRotations.TryGetValue(boneName, out var boneRot))
+            var entry = frame.BoneRotations.Find(e => e.BoneName == boneName);
+            if (entry != null)
             {
-              var rot = boneRot.Rotation;
+              var rot = entry.Rotation.Rotation;
               rotX.AddKey(frame.Time, rot[0]);
               rotY.AddKey(frame.Time, rot[1]);
               rotZ.AddKey(frame.Time, rot[2]);
