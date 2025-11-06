@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.Playables;
 using UnityEngine.Serialization;
 
 namespace AnimationClipRecording
@@ -13,20 +12,30 @@ namespace AnimationClipRecording
     [FormerlySerializedAs("speed")] public float _speed = 1.0f;
     [FormerlySerializedAs("normalizedTime")][Range(0f, 1f)] public float _normalizedTime = 0f;
 
-    private PlayableGraph _graph;
-    private AnimationClipPlayable _clipPlayable;
     private bool _isPlaying;
     private float _currentTime;
+    private float _clipLength;
+    private bool _animatorInitiallyEnabled;
+    private Transform[] _cachedTransforms;
+    private Vector3[] _cachedPositions;
+    private Quaternion[] _cachedRotations;
+    private Vector3[] _cachedScales;
+    private bool _poseCached;
 
     public bool IsPlaying => _isPlaying;
     public float CurrentTime => _currentTime;
-    public float NormalizedTime => _animationClip != null ? (_currentTime / _animationClip.length) : 0f;
+    public float NormalizedTime => _clipLength > Mathf.Epsilon ? Mathf.Clamp01(_currentTime / _clipLength) : 0f;
 
     private void Awake()
     {
       if (_animator == null)
       {
         _animator = GetComponentInChildren<Animator>();
+      }
+
+      if (_animator != null)
+      {
+        _animatorInitiallyEnabled = _animator.enabled;
       }
     }
 
@@ -40,30 +49,40 @@ namespace AnimationClipRecording
 
     private void Update()
     {
-      if (_isPlaying && _animationClip != null && _graph.IsValid())
+      if (!_isPlaying || _animationClip == null)
       {
-        _currentTime += Time.deltaTime * _speed;
-        var normalizedTime = _currentTime / _animationClip.length;
+        return;
+      }
 
-        if (normalizedTime >= 1f)
+      if (_clipLength <= Mathf.Epsilon)
+      {
+        ApplySample(0f);
+        StopPlayback(true, true);
+        return;
+      }
+
+      _currentTime += Time.deltaTime * _speed;
+
+      if (_loop)
+      {
+        var wrapped = Mathf.Repeat(_currentTime, _clipLength);
+        ApplySample(wrapped);
+      }
+      else
+      {
+        if (_currentTime >= _clipLength)
         {
-          if (_loop)
-          {
-            _currentTime = 0f;
-            normalizedTime = 0f;
-          }
-          else
-          {
-            Stop();
-            return;
-          }
+          ApplySample(_clipLength);
+          StopPlayback(true, true);
+          return;
         }
 
-        _normalizedTime = normalizedTime;
-        if (_clipPlayable.IsValid())
+        if (_currentTime < 0f)
         {
-          _clipPlayable.SetTime(_currentTime);
+          _currentTime = 0f;
         }
+
+        ApplySample(_currentTime);
       }
     }
 
@@ -81,20 +100,33 @@ namespace AnimationClipRecording
         return;
       }
 
-      Stop();
+      if (_isPlaying || _poseCached)
+      {
+        StopPlayback(false, false);
+      }
 
       _animationClip = clip;
-      _currentTime = 0f;
-      _isPlaying = true;
-      _normalizedTime = 0f;
+      _clipLength = clip.length;
+      if (_clipLength <= Mathf.Epsilon)
+      {
+        _clipLength = clip.frameRate > Mathf.Epsilon ? 1f / clip.frameRate : 1f / 60f;
+      }
 
-      SetupPlayableGraph();
+      CachePose();
+
+      _animatorInitiallyEnabled = _animator.enabled;
+      _animator.enabled = false;
+
+      _isPlaying = true;
+      _currentTime = 0f;
+      ApplySample(0f);
+
       Debug.Log($"HumanoidAnimationClipPlayer: Started playing {clip.name}");
     }
 
     public void PlayFromJson(string jsonPath)
     {
-      var clip = AnimationClipConverter.LoadFromJson(jsonPath);
+      var clip = AnimationClipConverter.LoadFromJson(jsonPath, _animator);
       if (clip != null)
       {
         Play(clip);
@@ -107,91 +139,162 @@ namespace AnimationClipRecording
 
     public void Stop()
     {
-      _isPlaying = false;
-      if (_graph.IsValid())
-      {
-        _graph.Stop();
-      }
+      StopPlayback(false, false);
     }
 
     public void Pause()
     {
-      _isPlaying = false;
-      if (_graph.IsValid())
-      {
-        _graph.Stop();
-      }
-    }
-
-    public void Resume()
-    {
-      if (_animationClip != null)
-      {
-        _isPlaying = true;
-        if (_graph.IsValid())
-        {
-          _graph.Play();
-        }
-      }
-    }
-
-    public void SetTime(float time)
-    {
-      if (_animationClip != null)
-      {
-        _currentTime = Mathf.Clamp(time, 0f, _animationClip.length);
-        _normalizedTime = _currentTime / _animationClip.length;
-        if (_clipPlayable.IsValid())
-        {
-          _clipPlayable.SetTime(_currentTime);
-        }
-      }
-    }
-
-    public void SetNormalizedTime(float normalizedTime)
-    {
-      normalizedTime = Mathf.Clamp01(normalizedTime);
-      if (_animationClip != null)
-      {
-        _currentTime = normalizedTime * _animationClip.length;
-        _normalizedTime = normalizedTime;
-        if (_clipPlayable.IsValid())
-        {
-          _clipPlayable.SetTime(_currentTime);
-        }
-      }
-    }
-
-    private void SetupPlayableGraph()
-    {
-      if (_animator == null || _animationClip == null)
+      if (!_isPlaying)
       {
         return;
       }
 
-      if (_graph.IsValid())
+      _isPlaying = false;
+    }
+
+    public void Resume()
+    {
+      if (_animationClip == null)
       {
-        _graph.Destroy();
+        Debug.LogWarning("HumanoidAnimationClipPlayer: Cannot resume without a valid AnimationClip");
+        return;
       }
 
-      _graph = PlayableGraph.Create();
-      _clipPlayable = AnimationClipPlayable.Create(_graph, _animationClip);
-      _clipPlayable.SetDuration(_animationClip.length);
-      _clipPlayable.SetSpeed(_speed);
+      if (_animator == null)
+      {
+        Debug.LogWarning("HumanoidAnimationClipPlayer: Animator is required to resume playback");
+        return;
+      }
 
-      var output = AnimationPlayableOutput.Create(_graph, "Animation", _animator);
-      output.SetSourcePlayable(_clipPlayable);
+      CachePose();
+      _animator.enabled = false;
+      _isPlaying = true;
+    }
 
-      _graph.Play();
+    public void SetTime(float time)
+    {
+      if (_animationClip == null)
+      {
+        return;
+      }
+
+      CachePose();
+      var duration = Mathf.Max(_clipLength, Mathf.Epsilon);
+      var clamped = Mathf.Clamp(time, 0f, duration);
+      _currentTime = clamped;
+      ApplySample(_loop ? Mathf.Repeat(clamped, duration) : clamped);
+    }
+
+    public void SetNormalizedTime(float normalizedTime)
+    {
+      if (_animationClip == null)
+      {
+        return;
+      }
+
+      normalizedTime = Mathf.Clamp01(normalizedTime);
+      var targetTime = _clipLength > Mathf.Epsilon ? normalizedTime * _clipLength : 0f;
+      SetTime(targetTime);
+    }
+
+    private void ApplySample(float time)
+    {
+      if (_animationClip == null || _animator == null)
+      {
+        return;
+      }
+
+      var sampleTime = _clipLength > Mathf.Epsilon ? Mathf.Clamp(time, 0f, _clipLength) : 0f;
+      _animationClip.SampleAnimation(_animator.gameObject, sampleTime);
+
+      _currentTime = sampleTime;
+      _normalizedTime = _clipLength > Mathf.Epsilon ? Mathf.Clamp01(sampleTime / _clipLength) : 0f;
+    }
+
+    private void CachePose()
+    {
+      if (_poseCached || _animator == null)
+      {
+        return;
+      }
+
+      _cachedTransforms = _animator.GetComponentsInChildren<Transform>(true);
+      var count = _cachedTransforms.Length;
+
+      _cachedPositions = new Vector3[count];
+      _cachedRotations = new Quaternion[count];
+      _cachedScales = new Vector3[count];
+
+      for (int i = 0; i < count; i++)
+      {
+        var transform = _cachedTransforms[i];
+        _cachedPositions[i] = transform.localPosition;
+        _cachedRotations[i] = transform.localRotation;
+        _cachedScales[i] = transform.localScale;
+      }
+
+      _poseCached = true;
+    }
+
+    private void RestorePose()
+    {
+      if (!_poseCached || _cachedTransforms == null)
+      {
+        return;
+      }
+
+      for (int i = 0; i < _cachedTransforms.Length; i++)
+      {
+        var transform = _cachedTransforms[i];
+        if (transform == null)
+        {
+          continue;
+        }
+
+        transform.localPosition = _cachedPositions[i];
+        transform.localRotation = _cachedRotations[i];
+        transform.localScale = _cachedScales[i];
+      }
+
+      _poseCached = false;
+      _cachedTransforms = null;
+      _cachedPositions = null;
+      _cachedRotations = null;
+      _cachedScales = null;
+    }
+
+    private void StopPlayback(bool reachedEnd, bool keepPose)
+    {
+      _isPlaying = false;
+
+      if (_animator != null)
+      {
+        _animator.enabled = _animatorInitiallyEnabled;
+      }
+
+      if (!keepPose)
+      {
+        RestorePose();
+      }
+
+      if (reachedEnd && _clipLength > Mathf.Epsilon)
+      {
+        _currentTime = _clipLength;
+        _normalizedTime = 1f;
+      }
+      else
+      {
+        _currentTime = 0f;
+        _normalizedTime = 0f;
+      }
     }
 
     private void OnDestroy()
     {
-      if (_graph.IsValid())
+      if (_isPlaying || _poseCached)
       {
-        _graph.Destroy();
+        StopPlayback(false, false);
       }
     }
   }
 }
-

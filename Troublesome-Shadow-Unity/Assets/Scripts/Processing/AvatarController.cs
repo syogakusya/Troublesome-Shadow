@@ -10,7 +10,6 @@ namespace PoseRuntime
     public class AvatarController : MonoBehaviour
     {
         [FormerlySerializedAs("receiver")] public PoseReceiver _receiver;
-        [FormerlySerializedAs("playback")] public PosePlayback _playback;
         [FormerlySerializedAs("normalizer")] public SkeletonNormalizer _normalizer;
         [FormerlySerializedAs("debugLogging")] public bool _debugLogging = false;
 
@@ -20,12 +19,6 @@ namespace PoseRuntime
 
         private void Update()
         {
-            if (_playback != null && _playback.TryGetNext(out var playbackSample))
-            {
-                ProcessSample(playbackSample);
-                return;
-            }
-
             if (_receiver != null && _receiver.TryDequeue(out var sample))
             {
                 ProcessSample(sample);

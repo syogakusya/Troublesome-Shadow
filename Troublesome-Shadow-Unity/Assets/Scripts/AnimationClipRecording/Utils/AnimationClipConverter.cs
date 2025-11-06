@@ -34,6 +34,7 @@ namespace AnimationClipRecording
     public class BoneRotationEntry
     {
       public string BoneName;
+      public string Path;
       public BoneRotationData Rotation;
     }
 
@@ -58,12 +59,15 @@ namespace AnimationClipRecording
       public bool RecordRootTransform;
     }
 
-    public static string ConvertToJson(AnimationClip clip, List<AnimationClipFrame> frames)
+    public static string ConvertToJson(AnimationClip clip, List<AnimationClipFrame> frames, Dictionary<HumanBodyBones, string> bonePaths, bool includeRootTransform)
     {
       if (clip == null || frames == null || frames.Count == 0)
       {
         return "{}";
       }
+
+      bonePaths ??= new Dictionary<HumanBodyBones, string>();
+      var recordedBonePaths = new HashSet<string>(StringComparer.Ordinal);
 
       var data = new AnimationClipJsonData
       {
@@ -74,8 +78,7 @@ namespace AnimationClipRecording
         Metadata = new AnimationClipMetadata
         {
           RecordedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-          BoneCount = frames.Count > 0 ? frames[0].BoneRotations.Count : 0,
-          RecordRootTransform = frames[0] != null && frames[0].RootPosition != Vector3.zero || frames[0].RootRotation != Quaternion.identity
+          RecordRootTransform = includeRootTransform
         }
       };
 
@@ -86,7 +89,7 @@ namespace AnimationClipRecording
           Time = frame.Time
         };
 
-        if (frame.RootPosition != Vector3.zero || frame.RootRotation != Quaternion.identity)
+        if (includeRootTransform)
         {
           frameData.RootTransform = new RootTransformData
           {
@@ -97,10 +100,17 @@ namespace AnimationClipRecording
 
         foreach (var kvp in frame.BoneRotations)
         {
-          var boneName = kvp.Key.ToString();
+          var bone = kvp.Key;
+          var boneName = bone.ToString();
+          var path = bonePaths != null && bonePaths.TryGetValue(bone, out var storedPath) && storedPath != null
+            ? storedPath
+            : boneName;
+          recordedBonePaths.Add(path);
+
           frameData.BoneRotations.Add(new BoneRotationEntry
           {
             BoneName = boneName,
+            Path = path,
             Rotation = new BoneRotationData
             {
               Rotation = new[] { kvp.Value.x, kvp.Value.y, kvp.Value.z, kvp.Value.w }
@@ -111,11 +121,13 @@ namespace AnimationClipRecording
         data.Frames.Add(frameData);
       }
 
+      data.Metadata.BoneCount = recordedBonePaths.Count;
+
       var json = JsonConvert.SerializeObject(data, Formatting.Indented);
       return json;
     }
 
-    public static AnimationClip LoadFromJson(string jsonPath)
+    public static AnimationClip LoadFromJson(string jsonPath, Animator animator = null)
     {
       if (string.IsNullOrEmpty(jsonPath) || !File.Exists(jsonPath))
       {
@@ -134,7 +146,7 @@ namespace AnimationClipRecording
           return null;
         }
 
-        return CreateAnimationClipFromJson(data);
+        return CreateAnimationClipFromJson(data, animator);
       }
       catch (Exception ex)
       {
@@ -143,7 +155,7 @@ namespace AnimationClipRecording
       }
     }
 
-    private static AnimationClip CreateAnimationClipFromJson(AnimationClipJsonData data)
+    private static AnimationClip CreateAnimationClipFromJson(AnimationClipJsonData data, Animator animator = null)
     {
       var clip = new AnimationClip
       {
@@ -152,6 +164,8 @@ namespace AnimationClipRecording
       };
 
       clip.legacy = false;
+
+      var bonePathOverrides = animator != null ? BuildHumanoidBonePathMap(animator) : null;
 
       if (data.Frames.Count > 0)
       {
@@ -193,16 +207,17 @@ namespace AnimationClipRecording
           clip.SetCurve("", typeof(Transform), "localRotation.w", rootRotationW);
         }
 
-        var boneNames = new HashSet<string>();
+        var boneIdentifiers = new HashSet<string>();
         foreach (var frame in data.Frames)
         {
           foreach (var entry in frame.BoneRotations)
           {
-            boneNames.Add(entry.BoneName);
+            var identifier = ResolveBonePath(entry, bonePathOverrides);
+            boneIdentifiers.Add(identifier);
           }
         }
 
-        foreach (var boneName in boneNames)
+        foreach (var boneIdentifier in boneIdentifiers)
         {
           var rotX = new AnimationCurve();
           var rotY = new AnimationCurve();
@@ -211,7 +226,11 @@ namespace AnimationClipRecording
 
           foreach (var frame in data.Frames)
           {
-            var entry = frame.BoneRotations.Find(e => e.BoneName == boneName);
+            var entry = frame.BoneRotations.Find(e =>
+            {
+              var identifier = ResolveBonePath(e, bonePathOverrides);
+              return identifier == boneIdentifier;
+            });
             if (entry != null)
             {
               var rot = entry.Rotation.Rotation;
@@ -222,7 +241,7 @@ namespace AnimationClipRecording
             }
           }
 
-          var bonePath = boneName;
+          var bonePath = boneIdentifier;
           clip.SetCurve(bonePath, typeof(Transform), "localRotation.x", rotX);
           clip.SetCurve(bonePath, typeof(Transform), "localRotation.y", rotY);
           clip.SetCurve(bonePath, typeof(Transform), "localRotation.z", rotZ);
@@ -236,10 +255,85 @@ namespace AnimationClipRecording
             AnimationUtility.SetAnimationClipSettings(clip, settings);
 #endif
 
+      clip.EnsureQuaternionContinuity();
+
       return clip;
     }
 
-    public static AnimationClip LoadFromJsonData(string json)
+    private static Dictionary<string, string> BuildHumanoidBonePathMap(Animator animator)
+    {
+      var map = new Dictionary<string, string>(StringComparer.Ordinal);
+      if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
+      {
+        return map;
+      }
+
+      var root = animator.transform;
+      for (int i = 0; i < (int)HumanBodyBones.LastBone; i++)
+      {
+        var bone = (HumanBodyBones)i;
+        var transform = animator.GetBoneTransform(bone);
+        if (transform == null)
+        {
+          continue;
+        }
+
+        var path = GetRelativePath(transform, root);
+        if (path == null)
+        {
+          continue;
+        }
+
+        map[bone.ToString()] = path;
+      }
+
+      return map;
+    }
+
+    private static string GetRelativePath(Transform target, Transform root)
+    {
+      if (target == null || root == null)
+      {
+        return null;
+      }
+
+      if (target == root)
+      {
+        return string.Empty;
+      }
+
+      var segments = new Stack<string>();
+      var current = target;
+      while (current != null && current != root)
+      {
+        segments.Push(current.name);
+        current = current.parent;
+      }
+
+      if (current != root)
+      {
+        return null;
+      }
+
+      return string.Join("/", segments.ToArray());
+    }
+
+    private static string ResolveBonePath(BoneRotationEntry entry, Dictionary<string, string> overrideMap)
+    {
+      if (!string.IsNullOrEmpty(entry.Path))
+      {
+        return entry.Path;
+      }
+
+      if (overrideMap != null && !string.IsNullOrEmpty(entry.BoneName) && overrideMap.TryGetValue(entry.BoneName, out var mappedPath))
+      {
+        return mappedPath;
+      }
+
+      return entry.BoneName;
+    }
+
+    public static AnimationClip LoadFromJsonData(string json, Animator animator = null)
     {
       try
       {
@@ -248,7 +342,7 @@ namespace AnimationClipRecording
         {
           return null;
         }
-        return CreateAnimationClipFromJson(data);
+        return CreateAnimationClipFromJson(data, animator);
       }
       catch (Exception ex)
       {
@@ -258,4 +352,3 @@ namespace AnimationClipRecording
     }
   }
 }
-

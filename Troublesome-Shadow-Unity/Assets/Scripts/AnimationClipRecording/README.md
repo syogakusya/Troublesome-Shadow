@@ -180,11 +180,16 @@ JSON形式は以下の構造です:
         "Position": [0, 0, 0],
         "Rotation": [0, 0, 0, 1]
       },
-      "BoneRotations": {
-        "Hips": [0, 0, 0, 1],
-        "Spine": [0, 0, 0, 1],
+      "BoneRotations": [
+        {
+          "BoneName": "Hips",
+          "Path": "Rig/B-root/B-hips",
+          "Rotation": {
+            "Rotation": [0, 0, 0, 1]
+          }
+        },
         ...
-      }
+      ]
     },
     ...
   ],
@@ -202,10 +207,8 @@ JSON形式は以下の構造です:
 
 - **名前空間**: `AnimationClipRecording`名前空間を使用
 - **独立したコンポーネント**: `HumanoidAnimationClipRecorder`と`HumanoidAnimationClipPlayer`は独立
-- **データ形式**: AnimationClip形式を使用（既存の`PoseRecording`とは異なる）
+- **データ形式**: AnimationClip形式を採用（旧`PoseRecording`ベースの仕組みは廃止済み）
 - **用途**: アニメーション編集・Timeline統合を目的とした記録機能
-
-既存の`PoseRecorder`や`PosePlayback`と併用することも可能です。
 
 ## 注意事項
 
@@ -213,4 +216,5 @@ JSON形式は以下の構造です:
 - 記録はプレイモード中のみ実行可能です
 - AnimationClipはHumanoidアバターのボーン構造に依存します
 - JSONからの読み込みは実行時のみ可能です（エディタでは`AnimationClipConverter.LoadFromJson`を使用）
-
+- JSONを読み込む際に`Animator`を渡すと、Humanoidボーン名から現在の階層（例: `Rig/B-root/B-hips`）へ自動でマッピングされます
+- 旧`PoseRecorder`/`PosePlayback`ベースのワークフローは廃止されており、本ドキュメントのコンポーネントのみで完結します
