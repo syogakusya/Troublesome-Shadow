@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a06bd6cde9fdcba4097684da15107426, type: 3}
   m_Name: SkeletonNormalizer
   m_EditorClassIdentifier: Assembly-CSharp::PoseRuntime.SkeletonNormalizer
-  globalScale: {x: 1, y: 1, z: 1}
-  globalOffset: {x: 0, y: 0, z: 0}
-  invertZAxis: 1
-  perJointOverrides: []
+  _globalScale: {x: 1, y: -1, z: 1}
+  _globalOffset: {x: 0, y: 0, z: 0}
+  _invertZAxis: 0
+  _perJointOverrides: []

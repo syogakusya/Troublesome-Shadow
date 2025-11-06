@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from .providers import SkeletonProvider, SkeletonData, MediaPipeSkeletonProvider
-from .transports import SkeletonTransport, WebSocketSkeletonTransport
+from .transports import SkeletonTransport, WebSocketSkeletonTransport, UDPSkeletonTransport
 
 LOGGER = logging.getLogger(__name__)
 
@@ -84,36 +84,84 @@ class PoseCaptureApp:
         return data
 
 
-provider = MediaPipeSkeletonProvider(model_complexity=1)
-transport = WebSocketSkeletonTransport(uri="ws://localhost:9000")
+def _load_metadata(path: Optional[Path]) -> dict:
+    if not path:
+        return {}
+    if not path.exists():
+        LOGGER.warning("Metadata file %s was not found; ignoring", path)
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        LOGGER.error("Failed to parse metadata JSON from %s: %s", path, exc)
+        return {}
 
-config = CaptureConfig(
-    provider=provider,
-    transport=transport,
-    frame_interval=1/60,  # 60FPS 相当
-    calibration_file=Path("calibration.json"),
-    metadata={"session": "demo_run"},
-)
 
-async def main() -> None:
-    """Helper to run the app until interrupted."""
+def _build_transport(transport: str, endpoint: str) -> SkeletonTransport:
+    if transport == "ws":
+        uri = endpoint if endpoint.startswith("ws://") or endpoint.startswith("wss://") else f"ws://{endpoint}"
+        return WebSocketSkeletonTransport(uri=uri)
+    if transport == "udp":
+        if ":" not in endpoint:
+            raise ValueError("UDP endpoint must be in host:port format")
+        host, port_str = endpoint.rsplit(":", 1)
+        return UDPSkeletonTransport(host=host or "127.0.0.1", port=int(port_str))
+    raise ValueError(f"Unsupported transport type {transport!r}")
+
+
+def _build_provider(args: "argparse.Namespace") -> SkeletonProvider:
+    if args.provider == "mediapipe":
+        image_size = None
+        if args.image_width or args.image_height:
+            image_size = (args.image_width or 0, args.image_height or 0)
+        return MediaPipeSkeletonProvider(
+            model_complexity=args.model_complexity,
+            camera_index=args.camera,
+            detection_confidence=args.detection_confidence,
+            tracking_confidence=args.tracking_confidence,
+            image_size=image_size,
+            preview=getattr(args, "preview", False),
+            preview_window=getattr(args, "preview_window", "MediaPipe Pose"),
+        )
+    raise ValueError(f"Unsupported provider {args.provider!r}")
+
+
+async def main(args: Optional["argparse.Namespace"] = None) -> None:
+    if args is None:
+        import argparse
+
+        parser = argparse.ArgumentParser(description="Stream skeleton data to Unity")
+        parser.add_argument("--provider", choices=["mediapipe"], default="mediapipe")
+        parser.add_argument("--transport", choices=["ws", "udp"], default="ws")
+        parser.add_argument("--endpoint", default="0.0.0.0:9000/pose", help="WebSocket URI or UDP host:port")
+        parser.add_argument("--frame-interval", type=float, default=1 / 60, help="Seconds between frames")
+        parser.add_argument("--calibration", type=Path, help="Optional calibration JSON file")
+        parser.add_argument("--metadata", type=Path, help="Optional metadata JSON file")
+        parser.add_argument("--camera", type=int, default=0, help="Camera index for MediaPipe")
+        parser.add_argument("--model-complexity", type=int, default=1, help="MediaPipe model complexity (0-2)")
+        parser.add_argument("--detection-confidence", type=float, default=0.5)
+        parser.add_argument("--tracking-confidence", type=float, default=0.5)
+        parser.add_argument("--image-width", type=int, help="Requested camera width")
+        parser.add_argument("--image-height", type=int, help="Requested camera height")
+        parser.add_argument("--preview", action="store_true", help="Show a webcam preview with MediaPipe landmarks")
+        parser.add_argument("--preview-window", default="MediaPipe Pose", help="Window title for the preview")
+        args = parser.parse_args()
+
+    provider = _build_provider(args)
+    transport = _build_transport(args.transport, args.endpoint)
+    metadata = _load_metadata(args.metadata)
+
+    config = CaptureConfig(
+        provider=provider,
+        transport=transport,
+        frame_interval=args.frame_interval,
+        calibration_file=args.calibration,
+        metadata=metadata,
+    )
+
     async with PoseCaptureApp(config) as app:
         await app.run()
 
-if __name__ == "__main__":
+
+if __name__ == "__main__":  # pragma: no cover - CLI entry point
     asyncio.run(main())
-
-
-if __name__ == "__main__":  # pragma: no cover - manual invocation
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Stream skeleton data")
-    parser.add_argument("transport", choices=["ws", "udp"], help="Transport type")
-    parser.add_argument("endpoint", help="URI (for ws) or host:port (for udp)")
-    parser.add_argument("--frame-interval", type=float, default=1 / 30)
-    parser.add_argument("--calibration", type=Path)
-    parser.add_argument("--metadata", type=Path, help="JSON file with metadata")
-    args = parser.parse_args()
-
-    raise SystemExit("Provider selection must be implemented by the integrator.")
-

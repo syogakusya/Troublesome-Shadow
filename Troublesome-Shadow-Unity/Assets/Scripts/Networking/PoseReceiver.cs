@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace PoseRuntime
 {
@@ -18,12 +19,13 @@ namespace PoseRuntime
 
     public class PoseReceiver : MonoBehaviour
     {
-        [Header("Connection")]
-        public PoseTransportType transportType = PoseTransportType.WebSocket;
-        public string host = "127.0.0.1";
-        public int port = 9000;
-        public string webSocketPath = "/pose";
-        public float reconnectDelay = 2f;
+        [FormerlySerializedAs("transportType")] [Header("Connection")]
+        public PoseTransportType _transportType = PoseTransportType.WebSocket;
+        [FormerlySerializedAs("host")] public string _host = "127.0.0.1";
+        [FormerlySerializedAs("port")] public int _port = 9000;
+        [FormerlySerializedAs("webSocketPath")] public string _webSocketPath = "/pose";
+        [FormerlySerializedAs("reconnectDelay")] public float _reconnectDelay = 2f;
+        [FormerlySerializedAs("debugLogging")] public bool _debugLogging = false;
 
         public event Action Connected;
         public event Action Disconnected;
@@ -69,6 +71,10 @@ namespace PoseRuntime
             {
             }
             Interlocked.Exchange(ref _framesReceived, 0);
+            if (_debugLogging)
+            {
+                Debug.Log($"PoseReceiver starting ({_transportType})");
+            }
             _worker = Task.Run(() => RunAsync(_cts.Token));
         }
 
@@ -92,7 +98,7 @@ namespace PoseRuntime
             {
                 try
                 {
-                    if (transportType == PoseTransportType.WebSocket)
+                    if (_transportType == PoseTransportType.WebSocket)
                     {
                         await RunWebSocketAsync(token);
                     }
@@ -101,10 +107,31 @@ namespace PoseRuntime
                         await RunUdpAsync(token);
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    if (!token.IsCancellationRequested)
+                    {
+                        Debug.LogWarning("PoseReceiver connection cancelled unexpectedly");
+                    }
+                    break;
+                }
+                catch (WebSocketException ex) when (token.IsCancellationRequested)
+                {
+                    // 再生停止などでキャンセルされた場合は警告にしない
+                    if (_debugLogging)
+                    {
+                        Debug.Log($"PoseReceiver WebSocket task cancelled: {ex.Message}");
+                    }
+                    break;
+                }
                 catch (Exception ex)
                 {
                     Debug.LogWarning($"PoseReceiver connection error: {ex.Message}");
-                    await Task.Delay(TimeSpan.FromSeconds(reconnectDelay), token);
+                    if (_debugLogging)
+                    {
+                        Debug.LogException(ex);
+                    }
+                    await Task.Delay(TimeSpan.FromSeconds(_reconnectDelay), token);
                 }
             }
         }
@@ -115,8 +142,13 @@ namespace PoseRuntime
             {
                 using (_webSocket = new ClientWebSocket())
                 {
-                    var uri = new Uri($"ws://{host}:{port}{webSocketPath}");
+                    var uri = new Uri($"ws://{_host}:{_port}{_webSocketPath}");
+                    if (_debugLogging)
+                    {
+                        Debug.Log($"PoseReceiver connecting to {uri}");
+                    }
                     await _webSocket.ConnectAsync(uri, token);
+                    Debug.Log($"PoseReceiver connected to {uri}");
                     Connected?.Invoke();
 
                     var buffer = new byte[65536];
@@ -137,6 +169,10 @@ namespace PoseRuntime
             finally
             {
                 Disconnected?.Invoke();
+                if (_debugLogging)
+                {
+                    Debug.Log("PoseReceiver disconnected");
+                }
             }
         }
 
@@ -144,7 +180,7 @@ namespace PoseRuntime
         {
             try
             {
-                using (_udpClient = new UdpClient(port))
+                using (_udpClient = new UdpClient(_port))
                 {
                     _udpClient.Client.ReceiveTimeout = (int)TimeSpan.FromSeconds(5).TotalMilliseconds;
                     Connected?.Invoke();
@@ -185,12 +221,20 @@ namespace PoseRuntime
                 {
                     _incoming.Enqueue(sample);
                     Interlocked.Increment(ref _framesReceived);
-                    Interlocked.Exchange(ref _lastTimestampMs, sample.timestamp);
+                    Interlocked.Exchange(ref _lastTimestampMs, sample._timestamp);
+                    if (_debugLogging && (_framesReceived % 30 == 1))
+                    {
+                        Debug.Log($"PoseReceiver buffered frame {_framesReceived} (timestamp {sample._timestamp})");
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"Failed to parse skeleton sample: {ex.Message}\n{json}");
+                if (_debugLogging)
+                {
+                    Debug.LogException(ex);
+                }
             }
         }
     }

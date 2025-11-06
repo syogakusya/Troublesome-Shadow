@@ -1,14 +1,15 @@
 using System.Text;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 
 namespace PoseRuntime
 {
     public class DiagnosticsPanel : MonoBehaviour
     {
-        public PoseReceiver receiver;
-        public Text statusText;
-        public float updateInterval = 0.5f;
+        [FormerlySerializedAs("receiver")] public PoseReceiver _receiver;
+        [FormerlySerializedAs("statusText")] public Text _statusText;
+        [FormerlySerializedAs("updateInterval")] public float _updateInterval = 0.5f;
 
         private float _timer;
         private long _previousFrameCount;
@@ -17,11 +18,11 @@ namespace PoseRuntime
 
         private void OnEnable()
         {
-            if (receiver != null)
+            if (_receiver != null)
             {
-                receiver.Connected += OnConnected;
-                receiver.Disconnected += OnDisconnected;
-                _previousFrameCount = receiver.TotalFramesReceived;
+                _receiver.Connected += OnConnected;
+                _receiver.Disconnected += OnDisconnected;
+                _previousFrameCount = _receiver.TotalFramesReceived;
             }
 
             _lastFrameArrival = Time.time;
@@ -29,25 +30,25 @@ namespace PoseRuntime
 
         private void OnDisable()
         {
-            if (receiver != null)
+            if (_receiver != null)
             {
-                receiver.Connected -= OnConnected;
-                receiver.Disconnected -= OnDisconnected;
+                _receiver.Connected -= OnConnected;
+                _receiver.Disconnected -= OnDisconnected;
             }
         }
 
         private void Update()
         {
-            if (receiver == null)
+            if (_receiver == null)
             {
                 return;
             }
 
             _timer += Time.deltaTime;
 
-            if (_timer >= updateInterval)
+            if (_timer >= _updateInterval)
             {
-                var totalFrames = receiver.TotalFramesReceived;
+                var totalFrames = _receiver.TotalFramesReceived;
                 var delta = totalFrames - _previousFrameCount;
                 if (delta > 0)
                 {
@@ -55,7 +56,7 @@ namespace PoseRuntime
                 }
 
                 var fps = delta / Mathf.Max(_timer, 0.001f);
-                RefreshPanel(fps, totalFrames, receiver.PendingSamples);
+                RefreshPanel(fps, totalFrames, _receiver.PendingSamples);
                 _previousFrameCount = totalFrames;
                 _timer = 0f;
             }
@@ -63,18 +64,18 @@ namespace PoseRuntime
 
         private void RefreshPanel(float fps, long totalFrames, int pending)
         {
-            if (statusText == null)
+            if (_statusText == null)
             {
                 return;
             }
 
             _builder.Length = 0;
-            _builder.AppendLine($"Transport: {receiver?.transportType}");
-            _builder.AppendLine($"Endpoint: {receiver?.host}:{receiver?.port}");
+            _builder.AppendLine($"Transport: {_receiver?._transportType}");
+            _builder.AppendLine($"Endpoint: {_receiver?._host}:{_receiver?._port}");
             _builder.AppendLine($"Frames: {fps:F1} fps (total {totalFrames})");
             _builder.AppendLine($"Queue: {pending}");
             _builder.AppendLine($"Last frame: {(Time.time - _lastFrameArrival):F2}s ago");
-            statusText.text = _builder.ToString();
+            _statusText.text = _builder.ToString();
         }
 
         private void OnConnected()

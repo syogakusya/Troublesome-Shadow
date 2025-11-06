@@ -1,30 +1,78 @@
 # Troublesome Shadow Pose Pipeline
 
-This repository contains a reference implementation for streaming human pose data from Python-based pose estimators to a Unity avatar.
+このリポジトリは、Python 製の姿勢推定プログラムから Unity アバターへ人のポーズデータをストリーミングするためのリファレンス実装です。
 
-## Components
+## コンポーネント
 
 ### Python PoseCaptureApp
-* Located under `pose_capture/`.
-* Provides a configurable application that requests skeleton samples from a `SkeletonProvider` (MediaPipe or OpenPose) and forwards them via WebSocket or UDP transports.
-* Transports are defined in `pose_capture/transports.py` and support JSON payloads compatible with the Unity runtime.
+* `pose_capture/` 配下に配置されています。
+* MediaPipe を利用して Web カメラから人体ランドマークを取得し、WebSocket または UDP で送信します。
+* `pose_capture/providers.py` の `MediaPipeSkeletonProvider` がカメラの初期化と推定処理、Unity 向け 3D 座標の生成を担当します。
+* `pose_capture/pose_capture_app.py` はプロバイダ・トランスポート・カメラインデックス・フレーム間隔などを設定できる CLI を提供します。
 
 ### Unity Runtime
-* Scripts live under `UnityProject/Assets/Scripts/` and are organised by concern (`Data`, `Networking`, `Processing`, `UI`).
-* `PoseReceiver` manages network connectivity and buffers incoming skeleton frames.
-* `SkeletonNormalizer`, `CalibrationManager`, and `BoneMapper` prepare incoming data for the avatar rig.
-* `MotionSmoother` attenuates noise, while `AvatarController` drives the rig inside `LateUpdate`.
-* `DiagnosticsPanel` surfaces live transport metrics and queue state for monitoring latency and connection health.
+* スクリプトは `Troublesome-Shadow-Unity/Assets/Scripts/` にあり、`Data` / `Networking` / `Processing` / `UI` に整理されています。
+* `PoseReceiver` がネットワーク接続とフレームキューを管理し、`AvatarController` が正規化後のスケルトンをリスナーに中継します。
+* `HumanoidPoseApplier` が Animator を直接駆動して Humanoid アバターにポーズを適用します。
+* （任意）`SkeletonNormalizer` を使って MediaPipe 座標系と Unity 座標系のスケール / 向きを調整できます。
+* `DiagnosticsPanel` は遅延やキューの状態などの指標を表示します。
 
-## Usage Overview
+## 利用手順の概要
 
-1. Instantiate a `SkeletonProvider` (e.g., `MediaPipeSkeletonProvider`) and a transport (`WebSocketSkeletonTransport` or `UDPSkeletonTransport`).
-2. Construct a `CaptureConfig` and run the `PoseCaptureApp` event loop to stream skeleton frames to Unity.
-3. In Unity, add the provided components to your scene:
-   * Attach `PoseReceiver` to an object to receive frames from Python.
-   * Configure `SkeletonNormalizer`, `CalibrationManager`, `BoneMapper`, and `MotionSmoother` to match your rig.
-   * Assign these dependencies to `AvatarController` to drive the avatar.
-   * Optionally add `DiagnosticsPanel` with a `Text` element for live status.
-4. Implement reconnection and calibration flows as needed for your experience.
+1. `SkeletonProvider`（例: `MediaPipeSkeletonProvider`）とトランスポート（`WebSocketSkeletonTransport` もしくは `UDPSkeletonTransport`）を用意します。
+2. `CaptureConfig` を作成し、`PoseCaptureApp` のイベントループを動かして Unity へ骨格フレームを送ります。
+3. Unity シーンに各コンポーネントを追加します。
+   * `PoseReceiver` を配置し、Python 側のホスト情報を設定します。
+   * `AvatarController` に `PoseReceiver`（および必要なら `SkeletonNormalizer`、`PosePlayback`）を割り当てます。
+   * `HumanoidPoseApplier` を同じ GameObject に追加し、`Animator` と `AvatarController` を参照に設定します。
+   * 必要に応じて `DiagnosticsPanel` を追加し、ステータス表示を行います。
+4. 必要に応じて再接続処理やキャリブレーションのフローを組み込みます。
 
-> **Note:** Real-time capture from MediaPipe/OpenPose requires installing their respective dependencies and providing camera frames, which is beyond the scope of this sample.
+## Python キャプチャ環境の準備
+
+MediaPipe と OpenCV、WebSocket クライアントをインストールします。
+
+```bash
+python -m pip install mediapipe opencv-python websockets
+```
+
+Unity へ送信を開始するには次のように実行します（`--preview` を付けるとプレビューウィンドウが表示されます）。
+
+```bash
+python -m pose_capture.pose_capture_app \
+  --provider mediapipe \
+  --transport ws \
+  --endpoint 0.0.0.0:9000/pose \
+  --camera 0 \
+  --frame-interval 0.016 \
+  --preview
+```
+
+主な引数:
+- `--camera`: 使用する Web カメラのインデックス。
+- `--endpoint`: WebSocket の場合は `ws://host:port/path` 形式、もしくは `host:port/path`（デフォルトは WebSocket）。
+- `--metadata` / `--calibration`: それぞれメタデータやキャリブレーション情報を含む JSON ファイルへのパス。
+- `--preview`: OpenCV ウィンドウにカメラ映像と MediaPipe のランドマークを重畳表示します。ESC キーでプレビューのみ停止できます。
+
+## Unity でのワークフロー
+
+1. `PoseReceiver` コンポーネントをシーンに追加し、Python 側のアドレス・ポート・パスを設定します。
+2. `PoseReceiver` と `AvatarController` をアバターのルートに配置し、必要に応じて `SkeletonNormalizer` を割り当てます。
+   - Humanoid モデルをリアルタイムで動かす場合は同じ GameObject に `HumanoidPoseApplier` を追加し、`Animator` と `AvatarController` を参照に設定してください。
+   - `HumanoidPoseApplier` の `autoPopulate` を有効にすると MediaPipe の主要ジョイントと Humanoid ボーンの既定マッピングが生成されます。必要に応じて `boneMappings` や `rotationOffset` を調整します。
+3. （任意）`PoseRecorder` を `AvatarController` と同じ GameObject に追加すると、セッションを記録できます。
+   - UI ボタンなどから `StartRecording()` / `StopRecording()` を呼び出すと、`Application.persistentDataPath/Recordings/` 以下に JSON が保存されます。
+4. （任意）`PosePlayback` コンポーネントを追加すると、録画したモーションを再生できます。
+   - `PoseRecorder` が生成した JSON を `PlayFromFile(path)` で読み込むか、`LastRecording` を `Play(recording)` に渡します。
+   - `AvatarController._playback` に割り当てると、再生中はライブデータよりも録画データが優先されます。
+   - Humanoid へ再生する場合も `HumanoidPoseApplier` が Animator のボーンを駆動します。
+
+## 録画ファイルと再生
+
+`PoseRecorder` は以下のフィールドを含む `.json` を出力します。
+- `name`: セッション名。
+- `durationMs`: ミリ秒単位の収録時間。
+- `frames`: タイムスタンプ付きの骨格フレーム（位置・回転・信頼度を保持）。
+- `meta`: Python 側で付与したメタデータ（カメラインデックスなど）。
+
+`PosePlayback` はループ再生や再生速度変更に対応しており、Python が接続されていなくても `AvatarController` 経由でアバターを動かせます。
