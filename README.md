@@ -37,6 +37,11 @@
 
 サンプルのレイアウト JSON は `docs/examples/seating_layout.example.json` に含まれています。
 
+### GUI ツール
+
+- 座席の矩形を視覚的に作成するには `python -m pose_capture.gui.seating_editor` を実行し、背景画像（またはカメラフレーム）上で座席をドラッグして保存します。【F:pose_capture/gui/seating_editor.py†L1-L236】
+- CLI オプションを迷わずに起動したい場合は `python -m pose_capture.gui.launcher` を実行し、GUI でカメラインデックスやメタデータファイルを指定して PoseCaptureApp を開始できます。【F:pose_capture/gui/launcher.py†L1-L230】
+
 ## Python キャプチャ環境の準備
 
 MediaPipe と OpenCV、WebSocket クライアントをインストールします。

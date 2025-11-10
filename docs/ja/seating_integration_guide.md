@@ -4,11 +4,12 @@
 
 ## 1. 座席レイアウトの定義
 
-1. Web カメラ映像上で各椅子の座面を囲む矩形を決め、`xMin`, `xMax`, `yMin`, `yMax` を 0.0〜1.0 の正規化座標で記録します。
+1. `python -m pose_capture.gui.seating_editor` を起動し、背景画像やカメラキャプチャ上で椅子の座面をドラッグして矩形を作成すると、正規化座標入りの JSON を自動生成できます。【F:pose_capture/gui/seating_editor.py†L1-L236】
+2. 手動で編集する場合は Web カメラ映像上で各椅子の座面を囲む矩形を決め、`xMin`, `xMax`, `yMin`, `yMax` を 0.0〜1.0 の正規化座標で記録します。
    - `0.0` は画面左（または上）、`1.0` は画面右（または下）を表します。
    - 座面より少し広めに設定すると検出が安定します。
-2. `docs/examples/seating_layout.example.json` をコピーし、座席ごとに ID と境界値を調整します。
-3. ファイルを Python 実行環境から参照できる場所に保存します。
+3. `docs/examples/seating_layout.example.json` をコピーし、座席ごとに ID と境界値を調整します。
+4. ファイルを Python 実行環境から参照できる場所に保存します。
 
 ```jsonc
 {

@@ -47,15 +47,17 @@ cd Troublesome-Shadow
    ```
    - `--preview` を付けると MediaPipe ランドマークと座席領域を重畳したプレビューウィンドウが開きます。
    - 複数カメラが接続されている場合は `--camera` のインデックスを切り替えて確認します。
+   - CLI 引数を毎回入力するのが面倒な場合は `python -m pose_capture.gui.launcher` を起動し、GUI で同じ項目を指定して「開始」をクリックすることもできます。【F:pose_capture/gui/launcher.py†L1-L230】
 
 ## 3. 座席レイアウトの作成
 
-1. `docs/examples/seating_layout.example.json` をコピーし、現場の椅子数に合わせて編集します。
+1. `python -m pose_capture.gui.seating_editor` を実行し、背景画像（もしくは「カメラから取得」ボタンでキャプチャしたフレーム）上で椅子をドラッグして座席を登録します。保存すると正規化座標を含む JSON が生成されます。【F:pose_capture/gui/seating_editor.py†L1-L236】
+2. 既存ファイルを直接編集する場合は `docs/examples/seating_layout.example.json` をコピーし、現場の椅子数に合わせて調整します。
    ```bash
    cp docs/examples/seating_layout.example.json seating.json
    ```
-2. プレビューで椅子座面を確認しながら、`xMin`〜`yMax` を 0.0〜1.0 の正規化座標で調整します。
-3. 完成した JSON を PoseCaptureApp 起動時の `--seating-config` に渡します。
+3. プレビューで椅子座面を確認しながら、`xMin`〜`yMax` を 0.0〜1.0 の正規化座標で調整します。
+4. 完成した JSON を PoseCaptureApp 起動時の `--seating-config` に渡します。
    ```bash
    python -m pose_capture.pose_capture_app \
      --provider mediapipe \
