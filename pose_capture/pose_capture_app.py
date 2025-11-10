@@ -26,6 +26,8 @@ class CaptureConfig:
     calibration_file: Optional[Path] = None
     metadata: dict = field(default_factory=dict)
     seating_layout: Optional[SeatingLayout] = None
+    mode: str = "shadow"
+    live_seating_editor: bool = True
 
 
 class PoseCaptureApp:
@@ -35,6 +37,8 @@ class PoseCaptureApp:
         self.config = config
         self._running = False
         self._calibration_data: Optional[dict] = None
+        self._seating_layout = config.seating_layout
+        self._live_editor_enabled = False
 
     async def __aenter__(self) -> "PoseCaptureApp":
         await self.start()
@@ -47,6 +51,7 @@ class PoseCaptureApp:
         LOGGER.info("Starting PoseCaptureApp")
         self._running = True
         self.config.provider.start()
+        self._maybe_enable_live_editor()
         await self.config.transport.connect()
         if self.config.calibration_file:
             self._calibration_data = self._load_calibration(self.config.calibration_file)
@@ -73,10 +78,16 @@ class PoseCaptureApp:
             merged.update(self._calibration_data)
         if self.config.metadata:
             merged.update(self.config.metadata)
-        if self.config.seating_layout:
-            seating_metadata = self.config.seating_layout.evaluate(skeleton)
+        if self.config.mode:
+            merged["mode"] = self.config.mode
+        if self._seating_layout:
+            seating_metadata = self._seating_layout.evaluate(skeleton)
             if seating_metadata:
                 merged["seating"] = seating_metadata
+            else:
+                merged.pop("seating", None)
+        else:
+            merged.pop("seating", None)
         skeleton.metadata = merged
         LOGGER.debug("Enriched skeleton payload: %s", json.dumps(skeleton.to_dict()))
         return skeleton
@@ -89,6 +100,35 @@ class PoseCaptureApp:
         data = json.loads(path.read_text())
         LOGGER.debug("Calibration data: %s", data)
         return data
+
+    async def update_seating_layout(self, layout: Optional[SeatingLayout]) -> None:
+        """Replace the active seating layout while the app is running."""
+
+        self._seating_layout = layout
+        self.config.seating_layout = layout
+        updater = getattr(self.config.provider, "update_live_seating_layout", None)
+        if callable(updater):
+            updater(layout)
+
+    def _handle_live_layout_update(self, layout: Optional[SeatingLayout]) -> None:
+        self._seating_layout = layout
+        self.config.seating_layout = layout
+
+    def _maybe_enable_live_editor(self) -> None:
+        if self._live_editor_enabled:
+            return
+        if not getattr(self.config, "live_seating_editor", False):
+            return
+        attach = getattr(self.config.provider, "configure_live_seating_editor", None)
+        if not callable(attach):
+            LOGGER.debug("Provider %s does not support live seating editing", type(self.config.provider).__name__)
+            return
+        try:
+            success = attach(initial_layout=self._seating_layout, on_layout_changed=self._handle_live_layout_update)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            LOGGER.exception("Failed to configure live seating editor: %s", exc)
+            return
+        self._live_editor_enabled = bool(success)
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -110,6 +150,25 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--image-height", type=int, help="Requested camera height")
     parser.add_argument("--preview", action="store_true", help="Show a webcam preview with MediaPipe landmarks")
     parser.add_argument("--preview-window", default="MediaPipe Pose", help="Window title for the preview")
+    parser.add_argument(
+        "--mode",
+        choices=["shadow", "avatar"],
+        default="shadow",
+        help="Interaction mode metadata to broadcast (shadow installation or humanoid avatar)",
+    )
+    parser.add_argument(
+        "--live-seating-editor",
+        dest="live_seating_editor",
+        action="store_true",
+        help="Allow seat rectangles to be edited directly inside the preview window",
+    )
+    parser.add_argument(
+        "--no-live-seating-editor",
+        dest="live_seating_editor",
+        action="store_false",
+        help="Disable live seat editing even when the preview window is open",
+    )
+    parser.set_defaults(live_seating_editor=True)
     return parser
 
 
@@ -164,6 +223,7 @@ def _build_provider(args: "argparse.Namespace") -> SkeletonProvider:
             image_size=image_size,
             preview=getattr(args, "preview", False),
             preview_window=getattr(args, "preview_window", "MediaPipe Pose"),
+            live_seating_editor=getattr(args, "live_seating_editor", True),
         )
     raise ValueError(f"Unsupported provider {args.provider!r}")
 
@@ -183,6 +243,8 @@ def build_config_from_args(args: "argparse.Namespace") -> CaptureConfig:
         calibration_file=getattr(args, "calibration", None),
         metadata=metadata,
         seating_layout=seating_layout,
+        mode=getattr(args, "mode", "shadow"),
+        live_seating_editor=getattr(args, "live_seating_editor", True),
     )
 
 

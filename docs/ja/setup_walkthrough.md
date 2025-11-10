@@ -43,15 +43,18 @@ cd Troublesome-Shadow
      --endpoint 0.0.0.0:9000/pose \
      --camera 0 \
      --frame-interval 0.016 \
-     --preview
+     --preview \
+     --mode shadow
    ```
    - `--preview` を付けると MediaPipe ランドマークと座席領域を重畳したプレビューウィンドウが開きます。
+   - `--mode` で Unity 側に通知する動作モードを切り替えられます。`shadow` は影インスタレーション、`avatar` は Humanoid アバターのリアルタイム追従・録画モードを示します。【F:pose_capture/pose_capture_app.py†L26-L120】
    - 複数カメラが接続されている場合は `--camera` のインデックスを切り替えて確認します。
-   - CLI 引数を毎回入力するのが面倒な場合は `python -m pose_capture.gui.launcher` を起動し、GUI で同じ項目を指定して「開始」をクリックすることもできます。【F:pose_capture/gui/launcher.py†L1-L230】
+   - `--live-seating-editor` はデフォルトで有効になっており、プレビューウィンドウ上で `E` キーを押すとライブ編集モードに入ります。座席をドラッグで移動、角をドラッグでリサイズ、`N` で新規追加、`Delete` で削除、`C` で全削除が行え、変更はそのままランタイムに反映されます。`Tab` で選択座席を巡回できます。【F:pose_capture/live_seating_editor.py†L1-L229】
+   - CLI 引数を毎回入力するのが面倒な場合は `python -m pose_capture.gui.launcher` を起動し、GUI で同じ項目を指定して「開始」をクリックすることもできます。GUI 右下の「座席を編集」ボタンを押すと座席エディタが別ウィンドウで開き、配置を変更すると即座に PoseCaptureApp へ反映されます。GUI 上でも「ライブ座席編集」をオンにしておけばプレビュー内の編集を併用できます。【F:pose_capture/gui/launcher.py†L1-L260】【F:pose_capture/gui/seating_editor.py†L1-L420】
 
 ## 3. 座席レイアウトの作成
 
-1. `python -m pose_capture.gui.seating_editor` を実行し、背景画像（もしくは「カメラから取得」ボタンでキャプチャしたフレーム）上で椅子をドラッグして座席を登録します。保存すると正規化座標を含む JSON が生成されます。【F:pose_capture/gui/seating_editor.py†L1-L236】
+1. GUI ランチャーから「座席を編集」を押すか、`python -m pose_capture.gui.seating_editor` を単体で実行し、背景画像（もしくは「カメラから取得」ボタンでキャプチャしたフレーム）上で椅子をドラッグして座席を登録します。保存すると正規化座標を含む JSON が生成され、ランチャーから開いた場合は変更がそのまま Python ランタイムへ送信されます。【F:pose_capture/gui/launcher.py†L120-L240】【F:pose_capture/gui/seating_editor.py†L1-L420】
 2. 既存ファイルを直接編集する場合は `docs/examples/seating_layout.example.json` をコピーし、現場の椅子数に合わせて調整します。
    ```bash
    cp docs/examples/seating_layout.example.json seating.json
@@ -68,7 +71,13 @@ cd Troublesome-Shadow
      --seating-config ./seating.json \
      --preview
    ```
-   - `Meta.seating` に占有状況が含まれていることを確認するには、ターミナルに表示されるログまたは `--debug` オプションを利用します。【F:pose_capture/pose_capture_app.py†L57-L85】【F:pose_capture/seating.py†L32-L115】
+   - `Meta.seating` に占有状況が含まれていることを確認するには、ターミナルに表示されるログまたは `--debug` オプションを利用します。【F:pose_capture/pose_capture_app.py†L26-L110】【F:pose_capture/seating.py†L32-L117】
+
+### 座席矩形と着席判定の仕組み
+
+- 各座席はカメラ画像に対する正規化座標（0.0〜1.0）で矩形が定義され、`SeatRegion.contains` が MediaPipe の骨格の腰中心が矩形内に収まっているかを確認します。【F:pose_capture/seating.py†L12-L61】
+- 着席中と判定された場合は `SeatingLayout.evaluate` が `Meta.seating.activeSeatId` と座席ごとの境界情報を生成し、外れた場合は `Meta.seating` が削除されます。座席矩形に「ランドマークがいくつ入ったら」といった閾値はなく、腰中心1点が収まっているかどうかで決まります。【F:pose_capture/pose_capture_app.py†L57-L110】【F:pose_capture/seating.py†L62-L115】
+- 信頼度は矩形の中心からどれだけ余裕があるかで決まり、矩形の半分の幅・高さを基準に余白を比率化した値（0.0〜1.0）が計算されます。矩形のサイズを広げると座っているとみなされる許容範囲が広がり、狭めると厳しくなります。【F:pose_capture/seating.py†L117-L147】
 
 ## 4. Unity プロジェクトの準備
 
@@ -76,13 +85,17 @@ cd Troublesome-Shadow
 2. サンプルシーン（例: `Assets/Scenes/ShadowDemo.unity`。無い場合は新規シーンを作成）に以下のコンポーネントを配置します。
    - `PoseReceiver`: `ws://127.0.0.1:9000/pose` など、Python 側のエンドポイントを設定。
    - `AvatarController`: `PoseReceiver` を参照に設定し、`SampleProcessed` イベントを受け取れるようにします。
-   - `HumanoidPoseApplier` または `ShadowSeatDirector` など、必要な処理コンポーネントを追加します。
+   - `InteractionModeCoordinator`: `Mode Source` を `Metadata` に設定すると Python から送られる `Meta.mode` に応じて `HumanoidPoseApplier` や `ShadowSeatDirector`、録画系コンポーネントを自動で切り替えます。`Manual` にすればシーン側で固定化も可能です。【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/InteractionModeCoordinator.cs†L1-L220】
+   - `HumanoidPoseApplier`（リアルタイム追従・録画用）および `ShadowSeatDirector`（影インスタレーション用）を必要に応じて追加します。`InteractionModeCoordinator` の `Avatar Only Components` / `Shadow Only Components` に登録しておくとモード切り替えに合わせて有効化されます。
+   - `ShadowTouchResponder`: MediaPipe の手ランドマークが影のルート（`Shadow Root`）に近づいた際に Animator トリガー（デフォルト: `Touched`）を送出します。`Touch Radius`・`Cooldown Seconds` を現場スケールに合わせて調整してください。【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/ShadowTouchResponder.cs†L1-L152】
+   - `PoseLandmarkVisualizer`: シーンビューやプレイ中に MediaPipe ランドマークをギズモ表示するデバッグ用コンポーネントです。`Draw In Play Mode` と `Draw When Selected Only` を切り替えることで描画タイミングを制御できます。`Show Seating Info` を有効にすると、Python 側で検出した着席判定（席IDと信頼度）がヒップ位置付近にオーバーレイされ、しきい値調整やキャリブレーションの確認に便利です。【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/PoseLandmarkVisualizer.cs†L18-L170】
 3. 影キャラクター用に `ShadowSeatDirector` を設定する場合の手順:
    1. 椅子ごとに空の GameObject（アンカー）を配置し、`ShadowSeatDirector.Seats` 配列にドラッグ＆ドロップします。
    2. `_lookTarget` には観客側を向かせたい Transform、`_heightOffset` には投影面からの距離を入力します。
    3. 床座り用のアンカーを作成し、`_floorAnchor` / `_floorLookTarget` に設定します。
    4. Animator に `SeatIndex`（int）、`OnFloor`（bool）、`Scoot` / `Surprised` / `Glare` / `Frustrated` / `Sit` などのトリガーを追加し、`ShadowSeatDirector` のフィールドと一致させます。【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/ShadowSeatDirector.cs†L43-L210】
-4. 再生し、Unity コンソールに「Connected」「Frame received」などのログが表示されるか確認します。`PoseReceiver` の `Diagnostics` を有効にすると遅延や受信フレーム数を確認できます。
+4. Humanoid アバターを録画したい場合は `HumanoidPoseApplier` と `AnimationClipRecording/HumanoidAnimationClipRecorder` を `InteractionModeCoordinator` の `Avatar Only Components` に登録し、モードが `avatar` の時のみ有効化されるようにします。収録したアニメーションクリップは `Assets/Recordings/AnimationClips` に保存されます。【F:Troublesome-Shadow-Unity/Assets/Scripts/AnimationClipRecording/Recording/HumanoidAnimationClipRecorder.cs†L1-L200】
+5. 再生し、Unity コンソールに「Connected」「Frame received」などのログが表示されるか確認します。`PoseReceiver` の `Diagnostics` を有効にすると遅延や受信フレーム数を確認できます。
 
 ## 5. 投影とキャリブレーション
 
@@ -94,8 +107,11 @@ cd Troublesome-Shadow
 
 - [ ] Python 側で MediaPipe ランドマークが安定して取得できる。
 - [ ] `Meta.seating.activeSeatId` が人の移動に応じて切り替わる。
+- [ ] `Meta.mode` が `shadow` / `avatar` に切り替わり、`InteractionModeCoordinator` が対応するコンポーネントを有効化している。【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/InteractionModeCoordinator.cs†L116-L190】
 - [ ] Unity 側で `PoseReceiver` が接続し、影キャラクターが座席に移動する。
 - [ ] 同席・隣席・満席・退席時の挙動が想定通りに再生される。【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/SeatingMetadata.cs†L15-L103】【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/ShadowSeatDirector.cs†L90-L210】
+- [ ] `ShadowTouchResponder` のトリガーが期待通りに発火し、Animator 側で専用アニメーションが再生される。
+- [ ] `PoseLandmarkVisualizer` のギズモ表示で MediaPipe ランドマークと椅子位置の整合が確認できる。
 - [ ] プロジェクターの投影と椅子位置が視覚的に合っている。
 
 ## 7. トラブルシューティング
