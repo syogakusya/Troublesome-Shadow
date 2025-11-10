@@ -159,6 +159,30 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.y
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 1342052852971943689, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1342052852971943689, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
+      propertyPath: _poseSpaceOrigin
+      value: 
+      objectReference: {fileID: 513821252}
+    - target: {fileID: 1342052852971943689, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
+      propertyPath: _resetRootOnEnable
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1342052852971943689, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
+      propertyPath: _trackRootMovement
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1342052852971943689, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
+      propertyPath: _rootPositionOffset.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1342052852971943689, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
+      propertyPath: _useMetadataRootTranslation
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 3503167532966410781, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
       propertyPath: m_Name
       value: HumanDummy_M White
@@ -204,6 +228,10 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7869543608362826461, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 7869543608362826461, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
       propertyPath: m_UpdateMode
       value: 1
       objectReference: {fileID: 0}
@@ -225,15 +253,6 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 3503167532966410781, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
       insertIndex: 2
       addedObject: {fileID: 1856930884}
-    - targetCorrespondingSourceObject: {fileID: 3503167532966410781, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 1856930882}
-    - targetCorrespondingSourceObject: {fileID: 3503167532966410781, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 1856930881}
-    - targetCorrespondingSourceObject: {fileID: 3503167532966410781, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 1856930878}
   m_SourcePrefab: {fileID: 100100000, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
 --- !u!1 &513821251
 GameObject:
@@ -369,76 +388,6 @@ Animator:
   m_CorrespondingSourceObject: {fileID: 7869543608362826461, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
   m_PrefabInstance: {fileID: 112340583}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &1856930878
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1856930874}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 08b0006e6e34d4569888b062b254f6f1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PoseRuntime.HumanoidPoseApplier
-  _controller: {fileID: 1856930882}
-  _animator: {fileID: 1856930875}
-  _updateRootTransform: 1
-  _rootPositionOffset: {x: 0, y: 0, z: 0}
-  _rootRotationOffset: {x: 0, y: 0, z: 0}
-  _positionLerp: 12
-  _rotationLerp: 15
-  _useMetadataRootTranslation: 1
-  _metadataRootKey: root_center_normalized
-  _metadataRootScale: {x: 1, y: 0, z: 1}
-  _metadataRootOffset: {x: 0, y: 0, z: 0}
-  _metadataRootAxisBlend: {x: 1, y: 0, z: 1}
-  _metadataRootUseDeltaFromStart: 1
-  _useAdvancedHeadOrientation: 1
-  _headForwardJoint: NOSE
-  _headLeftJoint: RIGHT_EAR
-  _headRightJoint: LEFT_EAR
-  _headBaseJoint: NECK
-  _headAxisFlip: {x: 1, y: 1, z: 1}
-  _useAdvancedTorsoOrientation: 1
-  _torsoAxisFlip: {x: 1, y: 1, z: 1}
-  _autoPopulate: 1
-  _debugLogging: 0
-  _animationClipPlayer: {fileID: 0}
-  _boneMappings: []
---- !u!114 &1856930881
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1856930874}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5c3bbab95dea10a48b6eeb82743910cb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PoseRuntime.PoseReceiver
-  _transportType: 0
-  _host: 127.0.0.1
-  _port: 9000
-  _webSocketPath: /pose
-  _reconnectDelay: 2
-  _debugLogging: 0
---- !u!114 &1856930882
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1856930874}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cb69b94466251fc479c0f05a645ec84e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PoseRuntime.AvatarController
-  _receiver: {fileID: 1856930881}
-  _normalizer: {fileID: 11400000, guid: e5a4d165ce48cfe479f4c0db5b4f3aac, type: 2}
-  _debugLogging: 0
 --- !u!4 &1856930883 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4311652260893728935, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
@@ -457,7 +406,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AnimationClipRecording.HumanoidAnimationClipPlayer
   _animator: {fileID: 1856930875}
-  _animationClip: {fileID: 7400000, guid: 3ff691778e3c24a2badbf08c69595a3b, type: 2}
+  _animationClip: {fileID: 7400000, guid: 31a55b6a6811b574bae8b5a731580c7f, type: 2}
   _playOnStart: 0
   _loop: 0
   _speed: 1
@@ -478,8 +427,12 @@ MonoBehaviour:
   _recordingName: humanoid_motion
   _frameRate: 60
   _recordRootTransform: 1
-  _recordAllHumanBones: 1
+  _recordEntireHierarchy: 1
+  _useHumanoidMuscleCurves: 1
   _selectedBones: 
+  _recordLocalPositions: 1
+  _recordLocalRotations: 1
+  _recordLocalScale: 0
   _saveToAssets: 1
   _assetsPath: Assets/Recordings/AnimationClips
   _exportJson: 1

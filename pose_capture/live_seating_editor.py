@@ -350,3 +350,4 @@ class LiveSeatingEditor:
 
 __all__ = ["LiveSeatingEditor"]
 
+

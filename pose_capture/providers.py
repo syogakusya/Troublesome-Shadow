@@ -182,6 +182,8 @@ class MediaPipeSkeletonProvider(SkeletonProvider):
             return None
 
         world_landmarks = getattr(results, "pose_world_landmarks", None)
+        if world_landmarks is None:
+            LOGGER.debug("pose_world_landmarks not available, using pose_landmarks with Z coordinate")
         skeleton = SkeletonData(timestamp_ms=int(time.time() * 1000))
 
         for idx, landmark in enumerate(results.pose_landmarks.landmark):
@@ -196,7 +198,8 @@ class MediaPipeSkeletonProvider(SkeletonProvider):
                 world = world_landmarks.landmark[idx]
                 position = [world.x, world.y, world.z]
             else:
-                position = [landmark.x, landmark.y, getattr(landmark, "z", 0.0)]
+                z_value = getattr(landmark, "z", 0.0)
+                position = [landmark.x, landmark.y, z_value]
 
             joint = Joint(
                 name=name,
@@ -251,7 +254,6 @@ class MediaPipeSkeletonProvider(SkeletonProvider):
                 self._live_seating_editor.render(annotated)
             except Exception as exc:  # pragma: no cover - defensive guard
                 LOGGER.exception("Failed to render live seating overlay: %s", exc)
-
         cv2.imshow(self._preview_window, annotated)
         key = cv2.waitKey(1) & 0xFF
         if self._live_seating_editor:
@@ -393,3 +395,4 @@ class OpenPoseSkeletonProvider(SkeletonProvider):
     def stop(self) -> None:  # pragma: no cover - OpenPose requires camera input
         LOGGER.info("Stopping OpenPose capture")
         self._wrapper.stop()
+

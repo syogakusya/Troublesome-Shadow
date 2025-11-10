@@ -1,6 +1,5 @@
 """Graphical launcher for the pose capture app."""
 from __future__ import annotations
-
 import asyncio
 import logging
 import threading

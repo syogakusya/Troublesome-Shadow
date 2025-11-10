@@ -45,6 +45,8 @@ namespace PoseRuntime
         [FormerlySerializedAs("autoPopulate")] public bool _autoPopulate = true;
         [FormerlySerializedAs("debugLogging")] public bool _debugLogging = false;
         [FormerlySerializedAs("animationClipPlayer")] public AnimationClipRecording.HumanoidAnimationClipPlayer _animationClipPlayer;
+        [Header("External Movement Control")]
+        public ShadowSeatDirector _shadowSeatDirector;
 
         [Serializable]
         public class HumanoidBoneMapping
@@ -97,6 +99,11 @@ namespace PoseRuntime
             if (_animationClipPlayer == null)
             {
                 _animationClipPlayer = GetComponent<AnimationClipRecording.HumanoidAnimationClipPlayer>();
+            }
+
+            if (_shadowSeatDirector == null)
+            {
+                _shadowSeatDirector = GetComponent<ShadowSeatDirector>();
             }
 
             if (_animator != null)
@@ -178,6 +185,11 @@ namespace PoseRuntime
             }
 
             if (!_hasSample || _animator == null)
+            {
+                return;
+            }
+
+            if (_shadowSeatDirector != null && _shadowSeatDirector.IsMoving)
             {
                 return;
             }
@@ -956,22 +968,6 @@ namespace PoseRuntime
 
             across = Vector3.Cross(up, forward).normalized;
 
-            Vector3 basePosition;
-            if (_trackRootMovement && _initialPelvisPositionCaptured)
-            {
-                var movementDelta = pelvisWorld - _initialPelvisPosition;
-                var scaledMovement = Vector3.Scale(movementDelta * _rootMovementScale, _rootMovementAxisScale);
-                basePosition = _initialRootPosition + scaledMovement;
-                if (_debugLogging && Time.frameCount % 30 == 0)
-                {
-                    Debug.Log($"HumanoidPoseApplier: movementDelta={movementDelta}, scaledMovement={scaledMovement}, basePosition={basePosition}");
-                }
-            }
-            else
-            {
-                basePosition = pelvisWorld;
-            }
-
             Vector3 targetPosition;
             if (_useMetadataRootTranslation && _hasMetadataRootPosition)
             {
@@ -980,13 +976,65 @@ namespace PoseRuntime
                     Mathf.Clamp01(_metadataRootAxisBlend.y),
                     Mathf.Clamp01(_metadataRootAxisBlend.z));
                 var metadataPosition = _metadataRootPosition;
-                targetPosition = new Vector3(
-                    metadataPosition.x * blend.x + basePosition.x * (1f - blend.x),
-                    metadataPosition.y * blend.y + basePosition.y * (1f - blend.y),
-                    metadataPosition.z * blend.z + basePosition.z * (1f - blend.z));
+                
+                if (_metadataRootUseDeltaFromStart && _metadataRootOriginCaptured)
+                {
+                    if (_animator != null)
+                    {
+                        var initialPos = _resetRootOnEnable ? _animator.transform.position : _initialRootPosition;
+                        if (initialPos == Vector3.zero && _animator != null)
+                        {
+                            initialPos = _animator.transform.position;
+                        }
+                        metadataPosition += initialPos;
+                    }
+                }
+                
+                if (blend.x >= 1f && blend.y >= 1f && blend.z >= 1f)
+                {
+                    targetPosition = metadataPosition;
+                }
+                else
+                {
+                    Vector3 basePosition;
+                    if (_trackRootMovement && _initialPelvisPositionCaptured)
+                    {
+                        var movementDelta = pelvisWorld - _initialPelvisPosition;
+                        var scaledMovement = Vector3.Scale(movementDelta * _rootMovementScale, _rootMovementAxisScale);
+                        basePosition = _initialRootPosition + scaledMovement;
+                        if (_debugLogging && Time.frameCount % 30 == 0)
+                        {
+                            Debug.Log($"HumanoidPoseApplier: movementDelta={movementDelta}, scaledMovement={scaledMovement}, basePosition={basePosition}");
+                        }
+                    }
+                    else
+                    {
+                        basePosition = pelvisWorld;
+                    }
+                    
+                    targetPosition = new Vector3(
+                        metadataPosition.x * blend.x + basePosition.x * (1f - blend.x),
+                        metadataPosition.y * blend.y + basePosition.y * (1f - blend.y),
+                        metadataPosition.z * blend.z + basePosition.z * (1f - blend.z));
+                }
             }
             else
             {
+                Vector3 basePosition;
+                if (_trackRootMovement && _initialPelvisPositionCaptured)
+                {
+                    var movementDelta = pelvisWorld - _initialPelvisPosition;
+                    var scaledMovement = Vector3.Scale(movementDelta * _rootMovementScale, _rootMovementAxisScale);
+                    basePosition = _initialRootPosition + scaledMovement;
+                    if (_debugLogging && Time.frameCount % 30 == 0)
+                    {
+                        Debug.Log($"HumanoidPoseApplier: movementDelta={movementDelta}, scaledMovement={scaledMovement}, basePosition={basePosition}");
+                    }
+                }
+                else
+                {
+                    basePosition = pelvisWorld;
+                }
                 targetPosition = basePosition;
             }
             targetPosition += _rootPositionOffset;

@@ -185,3 +185,4 @@ def test_update_seating_layout_forwards_to_provider():
     asyncio.run(app.update_seating_layout(layout))
 
     assert provider.received is layout
+
