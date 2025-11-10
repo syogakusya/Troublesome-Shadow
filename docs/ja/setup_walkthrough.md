@@ -43,9 +43,11 @@ cd Troublesome-Shadow
      --endpoint 0.0.0.0:9000/pose \
      --camera 0 \
      --frame-interval 0.016 \
-     --preview
+     --preview \
+     --mode shadow
    ```
    - `--preview` を付けると MediaPipe ランドマークと座席領域を重畳したプレビューウィンドウが開きます。
+   - `--mode` で Unity 側に通知する動作モードを切り替えられます。`shadow` は影インスタレーション、`avatar` は Humanoid アバターのリアルタイム追従・録画モードを示します。【F:pose_capture/pose_capture_app.py†L26-L120】
    - 複数カメラが接続されている場合は `--camera` のインデックスを切り替えて確認します。
    - CLI 引数を毎回入力するのが面倒な場合は `python -m pose_capture.gui.launcher` を起動し、GUI で同じ項目を指定して「開始」をクリックすることもできます。【F:pose_capture/gui/launcher.py†L1-L230】
 
@@ -76,13 +78,17 @@ cd Troublesome-Shadow
 2. サンプルシーン（例: `Assets/Scenes/ShadowDemo.unity`。無い場合は新規シーンを作成）に以下のコンポーネントを配置します。
    - `PoseReceiver`: `ws://127.0.0.1:9000/pose` など、Python 側のエンドポイントを設定。
    - `AvatarController`: `PoseReceiver` を参照に設定し、`SampleProcessed` イベントを受け取れるようにします。
-   - `HumanoidPoseApplier` または `ShadowSeatDirector` など、必要な処理コンポーネントを追加します。
+   - `InteractionModeCoordinator`: `Mode Source` を `Metadata` に設定すると Python から送られる `Meta.mode` に応じて `HumanoidPoseApplier` や `ShadowSeatDirector`、録画系コンポーネントを自動で切り替えます。`Manual` にすればシーン側で固定化も可能です。【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/InteractionModeCoordinator.cs†L1-L220】
+   - `HumanoidPoseApplier`（リアルタイム追従・録画用）および `ShadowSeatDirector`（影インスタレーション用）を必要に応じて追加します。`InteractionModeCoordinator` の `Avatar Only Components` / `Shadow Only Components` に登録しておくとモード切り替えに合わせて有効化されます。
+   - `ShadowTouchResponder`: MediaPipe の手ランドマークが影のルート（`Shadow Root`）に近づいた際に Animator トリガー（デフォルト: `Touched`）を送出します。`Touch Radius`・`Cooldown Seconds` を現場スケールに合わせて調整してください。【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/ShadowTouchResponder.cs†L1-L152】
+   - `PoseLandmarkVisualizer`: シーンビューやプレイ中に MediaPipe ランドマークをギズモ表示するデバッグ用コンポーネントです。`Draw In Play Mode` と `Draw When Selected Only` を切り替えることで描画タイミングを制御できます。`Show Seating Info` を有効にすると、Python 側で検出した着席判定（席IDと信頼度）がヒップ位置付近にオーバーレイされ、しきい値調整やキャリブレーションの確認に便利です。【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/PoseLandmarkVisualizer.cs†L18-L170】
 3. 影キャラクター用に `ShadowSeatDirector` を設定する場合の手順:
    1. 椅子ごとに空の GameObject（アンカー）を配置し、`ShadowSeatDirector.Seats` 配列にドラッグ＆ドロップします。
    2. `_lookTarget` には観客側を向かせたい Transform、`_heightOffset` には投影面からの距離を入力します。
    3. 床座り用のアンカーを作成し、`_floorAnchor` / `_floorLookTarget` に設定します。
    4. Animator に `SeatIndex`（int）、`OnFloor`（bool）、`Scoot` / `Surprised` / `Glare` / `Frustrated` / `Sit` などのトリガーを追加し、`ShadowSeatDirector` のフィールドと一致させます。【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/ShadowSeatDirector.cs†L43-L210】
-4. 再生し、Unity コンソールに「Connected」「Frame received」などのログが表示されるか確認します。`PoseReceiver` の `Diagnostics` を有効にすると遅延や受信フレーム数を確認できます。
+4. Humanoid アバターを録画したい場合は `HumanoidPoseApplier` と `AnimationClipRecording/HumanoidAnimationClipRecorder` を `InteractionModeCoordinator` の `Avatar Only Components` に登録し、モードが `avatar` の時のみ有効化されるようにします。収録したアニメーションクリップは `Assets/Recordings/AnimationClips` に保存されます。【F:Troublesome-Shadow-Unity/Assets/Scripts/AnimationClipRecording/Recording/HumanoidAnimationClipRecorder.cs†L1-L200】
+5. 再生し、Unity コンソールに「Connected」「Frame received」などのログが表示されるか確認します。`PoseReceiver` の `Diagnostics` を有効にすると遅延や受信フレーム数を確認できます。
 
 ## 5. 投影とキャリブレーション
 
@@ -94,8 +100,11 @@ cd Troublesome-Shadow
 
 - [ ] Python 側で MediaPipe ランドマークが安定して取得できる。
 - [ ] `Meta.seating.activeSeatId` が人の移動に応じて切り替わる。
+- [ ] `Meta.mode` が `shadow` / `avatar` に切り替わり、`InteractionModeCoordinator` が対応するコンポーネントを有効化している。【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/InteractionModeCoordinator.cs†L116-L190】
 - [ ] Unity 側で `PoseReceiver` が接続し、影キャラクターが座席に移動する。
 - [ ] 同席・隣席・満席・退席時の挙動が想定通りに再生される。【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/SeatingMetadata.cs†L15-L103】【F:Troublesome-Shadow-Unity/Assets/Scripts/Processing/ShadowSeatDirector.cs†L90-L210】
+- [ ] `ShadowTouchResponder` のトリガーが期待通りに発火し、Animator 側で専用アニメーションが再生される。
+- [ ] `PoseLandmarkVisualizer` のギズモ表示で MediaPipe ランドマークと椅子位置の整合が確認できる。
 - [ ] プロジェクターの投影と椅子位置が視覚的に合っている。
 
 ## 7. トラブルシューティング

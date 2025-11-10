@@ -74,3 +74,26 @@ def test_apply_metadata_runs_without_additional_metadata():
     updated = app._apply_metadata(skeleton)
 
     assert updated.metadata["seating"]["activeSeatId"] == "seat-x"
+
+
+def test_apply_metadata_includes_mode_metadata():
+    from pose_capture.pose_capture_app import CaptureConfig, PoseCaptureApp
+    from pose_capture.providers import SkeletonData
+
+    skeleton = SkeletonData()
+    skeleton.metadata = {}
+
+    config = CaptureConfig(
+        provider=DummyProvider(),
+        transport=DummyTransport(),
+        frame_interval=1 / 30,
+        calibration_file=None,
+        metadata={},
+        seating_layout=None,
+        mode="avatar",
+    )
+
+    app = PoseCaptureApp(config)
+    updated = app._apply_metadata(skeleton)
+
+    assert updated.metadata["mode"] == "avatar"

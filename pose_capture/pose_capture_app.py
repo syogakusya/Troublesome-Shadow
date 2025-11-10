@@ -26,6 +26,7 @@ class CaptureConfig:
     calibration_file: Optional[Path] = None
     metadata: dict = field(default_factory=dict)
     seating_layout: Optional[SeatingLayout] = None
+    mode: str = "shadow"
 
 
 class PoseCaptureApp:
@@ -73,6 +74,8 @@ class PoseCaptureApp:
             merged.update(self._calibration_data)
         if self.config.metadata:
             merged.update(self.config.metadata)
+        if self.config.mode:
+            merged["mode"] = self.config.mode
         if self.config.seating_layout:
             seating_metadata = self.config.seating_layout.evaluate(skeleton)
             if seating_metadata:
@@ -110,6 +113,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--image-height", type=int, help="Requested camera height")
     parser.add_argument("--preview", action="store_true", help="Show a webcam preview with MediaPipe landmarks")
     parser.add_argument("--preview-window", default="MediaPipe Pose", help="Window title for the preview")
+    parser.add_argument(
+        "--mode",
+        choices=["shadow", "avatar"],
+        default="shadow",
+        help="Interaction mode metadata to broadcast (shadow installation or humanoid avatar)",
+    )
     return parser
 
 
@@ -183,6 +192,7 @@ def build_config_from_args(args: "argparse.Namespace") -> CaptureConfig:
         calibration_file=getattr(args, "calibration", None),
         metadata=metadata,
         seating_layout=seating_layout,
+        mode=getattr(args, "mode", "shadow"),
     )
 
 
