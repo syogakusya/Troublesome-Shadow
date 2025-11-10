@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Mapping, Optional, Tuple, TYPE_CHECKING
 import logging
 import time
 
@@ -21,6 +21,11 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     op = None  # type: ignore
 
+
+from .live_seating_editor import LiveSeatingEditor
+
+if TYPE_CHECKING:  # pragma: no cover - import for type hints only
+    from .seating import SeatingLayout
 
 LOGGER = logging.getLogger(__name__)
 
@@ -103,6 +108,7 @@ class MediaPipeSkeletonProvider(SkeletonProvider):
         image_size: Optional[Tuple[int, int]] = None,
         preview: bool = False,
         preview_window: str = "MediaPipe Pose",
+        live_seating_editor: bool = True,
     ) -> None:
         if mp is None:  # pragma: no cover - optional dependency
             raise RuntimeError("mediapipe is not installed")
@@ -124,6 +130,9 @@ class MediaPipeSkeletonProvider(SkeletonProvider):
         self._drawing_styles = mp.solutions.drawing_styles
         self._pose_landmark_style = self._resolve_landmark_style()
         self._pose_connection_style = self._resolve_connection_style()
+        self._live_seating_editor_requested = live_seating_editor
+        self._live_seating_editor: Optional[LiveSeatingEditor] = None
+        self._live_layout_callback: Optional[Callable[[Optional["SeatingLayout"]], None]] = None
         self.joint_order = [
             j.name for j in mp.solutions.pose.PoseLandmark
         ]  # type: ignore[attr-defined]
@@ -146,6 +155,8 @@ class MediaPipeSkeletonProvider(SkeletonProvider):
         self._ensure_capture()
         if self._preview_enabled:
             cv2.namedWindow(self._preview_window, cv2.WINDOW_NORMAL)
+            if self._live_seating_editor_requested:
+                self._ensure_live_editor()
 
     def get_latest(self) -> Optional[SkeletonData]:  # pragma: no cover - requires camera input
         if self._capture is None:
@@ -222,6 +233,8 @@ class MediaPipeSkeletonProvider(SkeletonProvider):
                 cv2.destroyWindow(self._preview_window)
             except cv2.error:  # pragma: no cover - window already closed
                 pass
+        self._live_seating_editor = None
+        self._live_layout_callback = None
 
     def _show_preview(self, bgr_frame, landmarks) -> None:
         annotated = bgr_frame.copy()
@@ -233,9 +246,19 @@ class MediaPipeSkeletonProvider(SkeletonProvider):
                 landmark_drawing_spec=self._pose_landmark_style,
                 connection_drawing_spec=self._pose_connection_style,
             )
+        if self._live_seating_editor:
+            try:
+                self._live_seating_editor.render(annotated)
+            except Exception as exc:  # pragma: no cover - defensive guard
+                LOGGER.exception("Failed to render live seating overlay: %s", exc)
 
         cv2.imshow(self._preview_window, annotated)
         key = cv2.waitKey(1) & 0xFF
+        if self._live_seating_editor:
+            try:
+                self._live_seating_editor.handle_key(key)
+            except Exception as exc:  # pragma: no cover - defensive guard
+                LOGGER.exception("Live seating editor key handling failed: %s", exc)
         if key == 27:  # ESC pressed
             self._preview_enabled = False
             LOGGER.info("Disabling preview at user request (ESC pressed)")
@@ -251,6 +274,48 @@ class MediaPipeSkeletonProvider(SkeletonProvider):
                     LOGGER.info("Preview window closed; disabling preview rendering")
             except cv2.error:
                 self._preview_enabled = False
+
+    def configure_live_seating_editor(
+        self,
+        *,
+        initial_layout: Optional["SeatingLayout"],
+        on_layout_changed: Callable[[Optional["SeatingLayout"]], None],
+    ) -> bool:
+        if not self._live_seating_editor_requested:
+            LOGGER.debug("Live seating editor was not requested; skipping configuration")
+            return False
+        if not self._preview_enabled:
+            LOGGER.warning("Live seating editor requires the preview window; enable --preview to use it")
+            return False
+        self._live_layout_callback = on_layout_changed
+        if not self._ensure_live_editor():
+            return False
+        if self._live_seating_editor:
+            self._live_seating_editor.set_on_layout_changed(on_layout_changed)
+            self._live_seating_editor.set_layout(initial_layout)
+        return self._live_seating_editor is not None
+
+    def update_live_seating_layout(self, layout: Optional["SeatingLayout"]) -> None:
+        if not self._live_seating_editor:
+            return
+        self._live_seating_editor.set_layout(layout)
+
+    def _ensure_live_editor(self) -> bool:
+        if self._live_seating_editor:
+            return True
+        try:
+            editor = LiveSeatingEditor(self._preview_window, on_layout_changed=self._forward_live_layout)
+        except RuntimeError as exc:
+            LOGGER.warning("Unable to start live seating editor: %s", exc)
+            self._live_seating_editor_requested = False
+            return False
+        editor.bind()
+        self._live_seating_editor = editor
+        return True
+
+    def _forward_live_layout(self, layout: Optional["SeatingLayout"]) -> None:
+        if self._live_layout_callback:
+            self._live_layout_callback(layout)
 
     def _resolve_landmark_style(self):
         getter = getattr(self._drawing_styles, "get_default_pose_landmarks_style", None)

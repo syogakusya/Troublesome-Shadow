@@ -12,6 +12,14 @@ class DummyProvider:
         return None
 
 
+class ProviderWithLiveHook(DummyProvider):
+    def __init__(self):
+        self.received = None
+
+    def update_live_seating_layout(self, layout):
+        self.received = layout
+
+
 class DummyTransport:
     async def connect(self):
         pass
@@ -156,3 +164,24 @@ def test_update_seating_layout_can_disable_seating():
     updated = app._apply_metadata(skeleton)
 
     assert "seating" not in updated.metadata
+
+
+def test_update_seating_layout_forwards_to_provider():
+    from pose_capture.pose_capture_app import CaptureConfig, PoseCaptureApp
+
+    provider = ProviderWithLiveHook()
+    layout = StubLayout({"activeSeatId": "seat-live"})
+
+    config = CaptureConfig(
+        provider=provider,
+        transport=DummyTransport(),
+        frame_interval=1 / 30,
+        calibration_file=None,
+        metadata={},
+        seating_layout=None,
+    )
+
+    app = PoseCaptureApp(config)
+    asyncio.run(app.update_seating_layout(layout))
+
+    assert provider.received is layout

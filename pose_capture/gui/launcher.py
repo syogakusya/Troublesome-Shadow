@@ -37,7 +37,7 @@ class _LauncherArgs:
     image_height: Optional[int] = None
     preview: bool = False
     preview_window: str = "MediaPipe Pose"
-    mode: str = "shadow"
+    live_seating_editor: bool = True
 
 
 class _CaptureWorker(threading.Thread):
@@ -178,8 +178,21 @@ class PoseCaptureLauncherApp:
         add_row("画像高さ", height_entry)
 
         self.preview_var = tk.BooleanVar(value=self.args.preview)
-        preview_check = tk.Checkbutton(frame, text="プレビューを表示", variable=self.preview_var)
+        self.live_editor_var = tk.BooleanVar(value=self.args.live_seating_editor)
+
+        def _update_live_editor_state() -> None:
+            if self.preview_var.get():
+                live_editor_check.config(state=tk.NORMAL)
+            else:
+                self.live_editor_var.set(False)
+                live_editor_check.config(state=tk.DISABLED)
+
+        preview_check = tk.Checkbutton(frame, text="プレビューを表示", variable=self.preview_var, command=_update_live_editor_state)
         add_row("プレビュー", preview_check)
+
+        live_editor_check = tk.Checkbutton(frame, text="プレビュー上で座席を編集", variable=self.live_editor_var)
+        add_row("ライブ座席編集", live_editor_check)
+        self._update_live_editor_state = _update_live_editor_state
 
         self.preview_window_var = tk.StringVar(value=self.args.preview_window)
         preview_window_entry = tk.Entry(frame, textvariable=self.preview_window_var)
@@ -217,6 +230,9 @@ class PoseCaptureLauncherApp:
         self.image_height_var.set("" if self.args.image_height is None else str(self.args.image_height))
         self.preview_var.set(self.args.preview)
         self.preview_window_var.set(self.args.preview_window)
+        self.live_editor_var.set(self.args.live_seating_editor)
+        if hasattr(self, "_update_live_editor_state"):
+            self._update_live_editor_state()
 
     def _choose_file(self, var: tk.StringVar) -> None:
         path = filedialog.askopenfilename()
@@ -240,7 +256,7 @@ class PoseCaptureLauncherApp:
         args.image_height = self._to_optional_int(self.image_height_var.get())
         args.preview = self.preview_var.get()
         args.preview_window = self.preview_window_var.get()
-        args.mode = self.args.mode
+        args.live_seating_editor = self.live_editor_var.get()
         return args
 
     def _start_capture(self) -> None:

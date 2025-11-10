@@ -49,7 +49,8 @@ cd Troublesome-Shadow
    - `--preview` を付けると MediaPipe ランドマークと座席領域を重畳したプレビューウィンドウが開きます。
    - `--mode` で Unity 側に通知する動作モードを切り替えられます。`shadow` は影インスタレーション、`avatar` は Humanoid アバターのリアルタイム追従・録画モードを示します。【F:pose_capture/pose_capture_app.py†L26-L120】
    - 複数カメラが接続されている場合は `--camera` のインデックスを切り替えて確認します。
-   - CLI 引数を毎回入力するのが面倒な場合は `python -m pose_capture.gui.launcher` を起動し、GUI で同じ項目を指定して「開始」をクリックすることもできます。GUI 右下の「座席を編集」ボタンを押すと座席エディタが別ウィンドウで開き、配置を変更すると即座に PoseCaptureApp へ反映されます。【F:pose_capture/gui/launcher.py†L1-L260】【F:pose_capture/gui/seating_editor.py†L1-L420】
+   - `--live-seating-editor` はデフォルトで有効になっており、プレビューウィンドウ上で `E` キーを押すとライブ編集モードに入ります。座席をドラッグで移動、角をドラッグでリサイズ、`N` で新規追加、`Delete` で削除、`C` で全削除が行え、変更はそのままランタイムに反映されます。`Tab` で選択座席を巡回できます。【F:pose_capture/live_seating_editor.py†L1-L229】
+   - CLI 引数を毎回入力するのが面倒な場合は `python -m pose_capture.gui.launcher` を起動し、GUI で同じ項目を指定して「開始」をクリックすることもできます。GUI 右下の「座席を編集」ボタンを押すと座席エディタが別ウィンドウで開き、配置を変更すると即座に PoseCaptureApp へ反映されます。GUI 上でも「ライブ座席編集」をオンにしておけばプレビュー内の編集を併用できます。【F:pose_capture/gui/launcher.py†L1-L260】【F:pose_capture/gui/seating_editor.py†L1-L420】
 
 ## 3. 座席レイアウトの作成
 

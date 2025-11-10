@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional
+from typing import Dict, Iterable, List, Mapping, Optional, TYPE_CHECKING
 
-from .providers import SkeletonData
+if TYPE_CHECKING:  # pragma: no cover - import for type hints only
+    from .providers import SkeletonData
 
 
 @dataclass
@@ -56,7 +57,7 @@ class SeatingLayout:
                 return seat
         return None
 
-    def evaluate(self, skeleton: SkeletonData) -> Optional[Mapping[str, object]]:
+    def evaluate(self, skeleton: "SkeletonData") -> Optional[Mapping[str, object]]:
         metadata = skeleton.metadata or {}
         normalized = _extract_normalized_root(metadata)
         if normalized is None:
