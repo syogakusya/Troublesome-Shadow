@@ -206,9 +206,22 @@ namespace PoseRuntime
                     Gizmos.DrawLine(from, to);
                 }
             }
+            DrawEditorOverlays(sample);
+        }
+
+        private Vector3 ConvertToWorld(Vector3 position)
+        {
+            if (_poseSpaceOrigin != null)
+            {
+                return _poseSpaceOrigin.TransformPoint(position);
+            }
+
+            return position;
         }
 
 #if UNITY_EDITOR
+        private void DrawEditorOverlays(SkeletonSample sample)
+        {
             if (_showLabels)
             {
                 Handles.color = _jointColor;
@@ -233,20 +246,8 @@ namespace PoseRuntime
             {
                 DrawSeatingInfo(sample);
             }
-#endif
         }
 
-        private Vector3 ConvertToWorld(Vector3 position)
-        {
-            if (_poseSpaceOrigin != null)
-            {
-                return _poseSpaceOrigin.TransformPoint(position);
-            }
-
-            return position;
-        }
-
-#if UNITY_EDITOR
         private void DrawSeatingInfo(SkeletonSample sample)
         {
             if (!SeatingMetadataUtility.TryGetSnapshot(sample, out var snapshot))
@@ -314,6 +315,11 @@ namespace PoseRuntime
             }
 
             return transform.position;
+        }
+#else
+        private void DrawEditorOverlays(SkeletonSample sample)
+        {
+            // Editor-only diagnostics disabled in player builds.
         }
 #endif
     }
