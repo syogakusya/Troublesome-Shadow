@@ -1,6 +1,7 @@
 """Pose capture application entry point."""
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import logging
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from .providers import SkeletonProvider, SkeletonData, MediaPipeSkeletonProvider
+from .seating import SeatingLayout
 from .transports import SkeletonTransport, WebSocketSkeletonTransport, UDPSkeletonTransport
 
 LOGGER = logging.getLogger(__name__)
@@ -23,6 +25,7 @@ class CaptureConfig:
     frame_interval: float = 1 / 30
     calibration_file: Optional[Path] = None
     metadata: dict = field(default_factory=dict)
+    seating_layout: Optional[SeatingLayout] = None
 
 
 class PoseCaptureApp:
@@ -65,12 +68,16 @@ class PoseCaptureApp:
             await asyncio.sleep(self.config.frame_interval)
 
     def _apply_metadata(self, skeleton: SkeletonData) -> SkeletonData:
-        if not self.config.metadata and not self._calibration_data:
-            return skeleton
-        skeleton.metadata = {
-            **(self._calibration_data or {}),
-            **self.config.metadata,
-        }
+        merged = dict(skeleton.metadata or {})
+        if self._calibration_data:
+            merged.update(self._calibration_data)
+        if self.config.metadata:
+            merged.update(self.config.metadata)
+        if self.config.seating_layout:
+            seating_metadata = self.config.seating_layout.evaluate(skeleton)
+            if seating_metadata:
+                merged["seating"] = seating_metadata
+        skeleton.metadata = merged
         LOGGER.debug("Enriched skeleton payload: %s", json.dumps(skeleton.to_dict()))
         return skeleton
 
@@ -84,6 +91,29 @@ class PoseCaptureApp:
         return data
 
 
+def create_argument_parser() -> argparse.ArgumentParser:
+    """Construct an argument parser for the capture CLI and GUI."""
+
+    parser = argparse.ArgumentParser(description="Stream skeleton data to Unity")
+    parser.add_argument("--provider", choices=["mediapipe"], default="mediapipe")
+    parser.add_argument("--transport", choices=["ws", "udp"], default="ws")
+    parser.add_argument("--endpoint", default="0.0.0.0:9000/pose", help="WebSocket URI or UDP host:port")
+    parser.add_argument("--frame-interval", type=float, default=1 / 60, help="Seconds between frames")
+    parser.add_argument("--calibration", type=Path, help="Optional calibration JSON file")
+    parser.add_argument("--metadata", type=Path, help="Optional metadata JSON file")
+    parser.add_argument("--seating-config", type=Path, help="Optional seating configuration JSON file")
+    parser.add_argument("--camera", type=int, default=0, help="Camera index for MediaPipe")
+    parser.add_argument("--model-complexity", type=int, default=1, help="MediaPipe model complexity (0-2)")
+    parser.add_argument("--detection-confidence", type=float, default=0.5)
+    parser.add_argument("--tracking-confidence", type=float, default=0.5)
+    parser.add_argument("--image-width", type=int, help="Requested camera width")
+    parser.add_argument("--image-height", type=int, help="Requested camera height")
+    parser.add_argument("--preview", action="store_true", help="Show a webcam preview with MediaPipe landmarks")
+    parser.add_argument("--preview-window", default="MediaPipe Pose", help="Window title for the preview")
+    parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
+    return parser
+
+
 def _load_metadata(path: Optional[Path]) -> dict:
     if not path:
         return {}
@@ -95,6 +125,19 @@ def _load_metadata(path: Optional[Path]) -> dict:
     except json.JSONDecodeError as exc:
         LOGGER.error("Failed to parse metadata JSON from %s: %s", path, exc)
         return {}
+
+
+def _load_seating(path: Optional[Path]) -> Optional[SeatingLayout]:
+    if not path:
+        return None
+    if not path.exists():
+        LOGGER.warning("Seating config %s was not found; seating metadata disabled", path)
+        return None
+    try:
+        return SeatingLayout.from_json(path)
+    except Exception as exc:  # pragma: no cover - defensive parsing guard
+        LOGGER.error("Failed to load seating config %s: %s", path, exc)
+        return None
 
 
 def _build_transport(transport: str, endpoint: str) -> SkeletonTransport:
@@ -126,38 +169,43 @@ def _build_provider(args: "argparse.Namespace") -> SkeletonProvider:
     raise ValueError(f"Unsupported provider {args.provider!r}")
 
 
-async def main(args: Optional["argparse.Namespace"] = None) -> None:
-    if args is None:
-        import argparse
-
-        parser = argparse.ArgumentParser(description="Stream skeleton data to Unity")
-        parser.add_argument("--provider", choices=["mediapipe"], default="mediapipe")
-        parser.add_argument("--transport", choices=["ws", "udp"], default="ws")
-        parser.add_argument("--endpoint", default="0.0.0.0:9000/pose", help="WebSocket URI or UDP host:port")
-        parser.add_argument("--frame-interval", type=float, default=1 / 60, help="Seconds between frames")
-        parser.add_argument("--calibration", type=Path, help="Optional calibration JSON file")
-        parser.add_argument("--metadata", type=Path, help="Optional metadata JSON file")
-        parser.add_argument("--camera", type=int, default=0, help="Camera index for MediaPipe")
-        parser.add_argument("--model-complexity", type=int, default=1, help="MediaPipe model complexity (0-2)")
-        parser.add_argument("--detection-confidence", type=float, default=0.5)
-        parser.add_argument("--tracking-confidence", type=float, default=0.5)
-        parser.add_argument("--image-width", type=int, help="Requested camera width")
-        parser.add_argument("--image-height", type=int, help="Requested camera height")
-        parser.add_argument("--preview", action="store_true", help="Show a webcam preview with MediaPipe landmarks")
-        parser.add_argument("--preview-window", default="MediaPipe Pose", help="Window title for the preview")
-        args = parser.parse_args()
+def build_config_from_args(args: "argparse.Namespace") -> CaptureConfig:
+    """Create a :class:`CaptureConfig` instance from parsed arguments."""
 
     provider = _build_provider(args)
     transport = _build_transport(args.transport, args.endpoint)
-    metadata = _load_metadata(args.metadata)
+    metadata = _load_metadata(getattr(args, "metadata", None))
+    seating_layout = _load_seating(getattr(args, "seating_config", None))
 
-    config = CaptureConfig(
+    return CaptureConfig(
         provider=provider,
         transport=transport,
         frame_interval=args.frame_interval,
-        calibration_file=args.calibration,
+        calibration_file=getattr(args, "calibration", None),
         metadata=metadata,
+        seating_layout=seating_layout,
     )
+
+
+def configure_logging(debug: bool = False) -> None:
+    """Configure the root logger for CLI and GUI launchers."""
+
+    level = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        force=True,
+    )
+
+
+async def main(args: Optional["argparse.Namespace"] = None) -> None:
+    if args is None:
+        parser = create_argument_parser()
+        args = parser.parse_args()
+
+    configure_logging(getattr(args, "debug", False))
+
+    config = build_config_from_args(args)
 
     async with PoseCaptureApp(config) as app:
         await app.run()
