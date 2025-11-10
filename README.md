@@ -28,6 +28,20 @@
    * 必要に応じて `DiagnosticsPanel` を追加し、ステータス表示を行います。
 4. 必要に応じて再接続処理やキャリブレーションのフローを組み込みます。
 
+### 座席インタラクションの設定
+
+影キャラクターを椅子の占有状況に応じて動かす場合は、次のドキュメントを順に参照してください。
+
+1. **セットアップ全体像**: `docs/ja/setup_walkthrough.md` で Python / Unity 双方の準備と動作確認を行います。
+2. **座席メタデータの詳細**: `docs/ja/seating_integration_guide.md` で `--seating-config` の作成や `ShadowSeatDirector` の調整方法を確認します。
+
+サンプルのレイアウト JSON は `docs/examples/seating_layout.example.json` に含まれています。
+
+### GUI ツール
+
+- 座席の矩形を視覚的に作成するには `python -m pose_capture.gui.seating_editor` を実行し、背景画像（またはカメラフレーム）上で座席をドラッグして保存します。【F:pose_capture/gui/seating_editor.py†L1-L236】
+- CLI オプションを迷わずに起動したい場合は `python -m pose_capture.gui.launcher` を実行し、GUI でカメラインデックスやメタデータファイルを指定して PoseCaptureApp を開始できます。【F:pose_capture/gui/launcher.py†L1-L230】
+
 ## Python キャプチャ環境の準備
 
 MediaPipe と OpenCV、WebSocket クライアントをインストールします。
