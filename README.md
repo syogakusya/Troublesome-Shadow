@@ -30,7 +30,12 @@
 
 ### 座席インタラクションの設定
 
-影キャラクターを椅子の占有状況に応じて動かす場合は、`docs/ja/seating_integration_guide.md` を参照して Python 側の `--seating-config` と Unity の `ShadowSeatDirector` を設定してください。サンプルのレイアウト JSON は `docs/examples/seating_layout.example.json` に含まれています。
+影キャラクターを椅子の占有状況に応じて動かす場合は、次のドキュメントを順に参照してください。
+
+1. **セットアップ全体像**: `docs/ja/setup_walkthrough.md` で Python / Unity 双方の準備と動作確認を行います。
+2. **座席メタデータの詳細**: `docs/ja/seating_integration_guide.md` で `--seating-config` の作成や `ShadowSeatDirector` の調整方法を確認します。
+
+サンプルのレイアウト JSON は `docs/examples/seating_layout.example.json` に含まれています。
 
 ## Python キャプチャ環境の準備
 
