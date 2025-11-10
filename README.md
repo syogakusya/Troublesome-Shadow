@@ -28,6 +28,10 @@
    * 必要に応じて `DiagnosticsPanel` を追加し、ステータス表示を行います。
 4. 必要に応じて再接続処理やキャリブレーションのフローを組み込みます。
 
+### 座席インタラクションの設定
+
+影キャラクターを椅子の占有状況に応じて動かす場合は、`docs/ja/seating_integration_guide.md` を参照して Python 側の `--seating-config` と Unity の `ShadowSeatDirector` を設定してください。サンプルのレイアウト JSON は `docs/examples/seating_layout.example.json` に含まれています。
+
 ## Python キャプチャ環境の準備
 
 MediaPipe と OpenCV、WebSocket クライアントをインストールします。

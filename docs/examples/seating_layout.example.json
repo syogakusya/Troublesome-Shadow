@@ -1,0 +1,31 @@
+{
+  "seats": [
+    {
+      "id": "seat-1",
+      "bounds": {
+        "xMin": 0.08,
+        "xMax": 0.28,
+        "yMin": 0.55,
+        "yMax": 0.92
+      }
+    },
+    {
+      "id": "seat-2",
+      "bounds": {
+        "xMin": 0.32,
+        "xMax": 0.52,
+        "yMin": 0.53,
+        "yMax": 0.90
+      }
+    },
+    {
+      "id": "seat-3",
+      "bounds": {
+        "xMin": 0.58,
+        "xMax": 0.78,
+        "yMin": 0.52,
+        "yMax": 0.88
+      }
+    }
+  ]
+}
