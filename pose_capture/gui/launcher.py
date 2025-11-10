@@ -35,6 +35,7 @@ class _LauncherArgs:
     image_height: Optional[int] = None
     preview: bool = False
     preview_window: str = "MediaPipe Pose"
+    mode: str = "shadow"
 
 
 class _CaptureWorker(threading.Thread):
@@ -222,6 +223,7 @@ class PoseCaptureLauncherApp:
         args.image_height = self._to_optional_int(self.image_height_var.get())
         args.preview = self.preview_var.get()
         args.preview_window = self.preview_window_var.get()
+        args.mode = self.args.mode
         return args
 
     def _start_capture(self) -> None:
