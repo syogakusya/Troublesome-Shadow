@@ -165,7 +165,9 @@ public class LoadFromJson : MonoBehaviour
 
 ## JSONフォーマット
 
-JSON形式は以下の構造です:
+### Humanoidモード（オプション）
+
+`Use Humanoid Muscle Curves` を有効化すると、JSONはHumanoid専用プロパティで構成されます:
 
 ```json
 {
@@ -173,33 +175,55 @@ JSON形式は以下の構造です:
   "Length": 5.0,
   "FrameRate": 60,
   "LoopTime": false,
-  "Frames": [
+  "HumanoidFrames": [
     {
       "Time": 0.0,
-      "RootTransform": {
-        "Position": [0, 0, 0],
-        "Rotation": [0, 0, 0, 1]
-      },
-      "BoneRotations": [
-        {
-          "BoneName": "Hips",
-          "Path": "Rig/B-root/B-hips",
-          "Rotation": {
-            "Rotation": [0, 0, 0, 1]
-          }
-        },
-        ...
-      ]
+      "BodyPosition": [0.0, 0.9, 0.0],
+      "BodyRotation": [0.0, 0.0, 0.0, 1.0],
+      "Muscles": [0.0, 0.02, -0.01, ...]
     },
     ...
   ],
   "Metadata": {
     "RecordedAt": "2024-01-01 12:00:00",
-    "BoneCount": 54,
-    "RecordRootTransform": true
+    "DataFormat": "humanoid",
+    "MuscleCount": 95
   }
 }
 ```
+
+`HumanoidFrames[n]` には `RootT/RootQ` に対応する `BodyPosition` / `BodyRotation` と、`HumanTrait.MuscleName` の順で並んだ `Muscles` 配列が収録されます。Unity側では `Animator` の `RootT.x` や各Muscle名のカーブとして再構築され、Humanoidリグで正しく再生されます。
+
+### Transformモード（デフォルト）
+
+オプションを無効のまま利用すると、従来どおりヒエラルキー上の各Transformをローカル座標で書き出します:
+
+```json
+{
+  "Transforms": [
+    { "Path": "", "HumanoidBone": "Hips" },
+    { "Path": "Rig/Spine", "HumanoidBone": "Spine" }
+  ],
+  "Frames": [
+    {
+      "Time": 0.0,
+      "Samples": [
+        { "Position": [0, 0, 0], "Rotation": [0, 0, 0, 1] },
+        { "Rotation": [0.05, 0.00, 0.00, 0.99] }
+      ]
+    }
+  ],
+  "Metadata": {
+    "DataFormat": "transform",
+    "TransformCount": 97,
+    "RecordPositions": true,
+    "RecordRotations": true,
+    "RecordScale": false
+  }
+}
+```
+
+`Transforms`配列は記録対象の順番とパスを提供し、`Frames[n].Samples[m]` が `Transforms[m]` に対応します。各サンプルは記録されたプロパティのみを保持し、スケールを無効化している場合は `Scale` が省略されます。
 
 ## 既存実装との分離
 
@@ -214,6 +238,9 @@ JSON形式は以下の構造です:
 
 - Humanoidアバターが設定されたAnimatorが必要です
 - 記録はプレイモード中のみ実行可能です
+- デフォルトでは従来通りTransformベースでヒエラルキー全体を収録します
+- Humanoid専用カーブ（RootT/RootQ + 全Muscle）が必要な場合のみ `Use Humanoid Muscle Curves` を有効化してください
+- TransformモードではAnimator配下の全Transform（ルートを含む）を対象とし、位置/回転/スケールの記録をインスペクタで切り替えられます
 - AnimationClipはHumanoidアバターのボーン構造に依存します
 - JSONからの読み込みは実行時のみ可能です（エディタでは`AnimationClipConverter.LoadFromJson`を使用）
 - JSONを読み込む際に`Animator`を渡すと、Humanoidボーン名から現在の階層（例: `Rig/B-root/B-hips`）へ自動でマッピングされます

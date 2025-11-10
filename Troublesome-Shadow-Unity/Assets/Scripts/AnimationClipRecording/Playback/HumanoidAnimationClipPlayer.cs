@@ -296,5 +296,13 @@ namespace AnimationClipRecording
         StopPlayback(false, false);
       }
     }
+
+    private void OnDisable()
+    {
+      if (_isPlaying || _poseCached)
+      {
+        StopPlayback(false, false);
+      }
+    }
   }
 }

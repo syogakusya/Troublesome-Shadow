@@ -18,7 +18,9 @@ namespace AnimationClipRecording
       public float Length;
       public float FrameRate;
       public bool LoopTime;
+      public List<TransformInfo> Transforms = new List<TransformInfo>();
       public List<FrameData> Frames = new List<FrameData>();
+      public List<HumanoidFrameData> HumanoidFrames = new List<HumanoidFrameData>();
       public AnimationClipMetadata Metadata = new AnimationClipMetadata();
     }
 
@@ -26,48 +28,73 @@ namespace AnimationClipRecording
     public class FrameData
     {
       public float Time;
-      public RootTransformData RootTransform;
-      public List<BoneRotationEntry> BoneRotations = new List<BoneRotationEntry>();
+      public List<SampleData> Samples = new List<SampleData>();
     }
 
     [Serializable]
-    public class BoneRotationEntry
+    public class SampleData
     {
-      public string BoneName;
+      public float[] Position;
+      public float[] Rotation;
+      public float[] Scale;
+    }
+
+    [Serializable]
+    public class HumanoidFrameData
+    {
+      public float Time;
+      public float[] BodyPosition = new float[3];
+      public float[] BodyRotation = new float[4];
+      public float[] Muscles;
+    }
+
+    [Serializable]
+    public class TransformInfo
+    {
       public string Path;
-      public BoneRotationData Rotation;
-    }
-
-    [Serializable]
-    public class RootTransformData
-    {
-      public float[] Position = new float[3];
-      public float[] Rotation = new float[4];
-    }
-
-    [Serializable]
-    public class BoneRotationData
-    {
-      public float[] Rotation = new float[4];
+      public string HumanoidBone;
     }
 
     [Serializable]
     public class AnimationClipMetadata
     {
       public string RecordedAt;
-      public int BoneCount;
-      public bool RecordRootTransform;
+      public int TransformCount;
+      public int MuscleCount;
+      public string DataFormat = "transform";
+      public bool RecordRootTransform = true;
+      public bool RecordPositions = true;
+      public bool RecordRotations = true;
+      public bool RecordScale = false;
     }
 
-    public static string ConvertToJson(AnimationClip clip, List<AnimationClipFrame> frames, Dictionary<HumanBodyBones, string> bonePaths, bool includeRootTransform)
+    public static string ConvertToJson(
+      AnimationClip clip,
+      IReadOnlyList<RecordedTransformInfo> transforms,
+      List<AnimationClipFrame> frames,
+      bool includeRootTransform,
+      bool includePositions,
+      bool includeRotations,
+      bool includeScale,
+      List<HumanoidMuscleFrame> humanoidFrames)
     {
-      if (clip == null || frames == null || frames.Count == 0)
+      var hasHumanoidFrames = humanoidFrames != null && humanoidFrames.Count > 0;
+      var hasTransformFrames = frames != null && frames.Count > 0;
+
+      if (clip == null || (!hasHumanoidFrames && !hasTransformFrames))
       {
         return "{}";
       }
 
-      bonePaths ??= new Dictionary<HumanBodyBones, string>();
-      var recordedBonePaths = new HashSet<string>(StringComparer.Ordinal);
+      var transformCount = 0;
+      if (hasTransformFrames)
+      {
+        transformCount = transforms != null ? transforms.Count : frames[0].TransformSamples?.Length ?? 0;
+        if (transformCount <= 0)
+        {
+          transformCount = frames[0].TransformSamples?.Length ?? 0;
+        }
+      }
 
       var data = new AnimationClipJsonData
       {
@@ -78,50 +105,104 @@ namespace AnimationClipRecording
         Metadata = new AnimationClipMetadata
         {
           RecordedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-          RecordRootTransform = includeRootTransform
+          RecordRootTransform = includeRootTransform,
+          RecordPositions = includePositions,
+          RecordRotations = includeRotations,
+          RecordScale = includeScale,
+          TransformCount = transformCount,
+          MuscleCount = hasHumanoidFrames ? HumanTrait.MuscleCount : 0,
+          DataFormat = hasHumanoidFrames ? "humanoid" : "transform"
         }
       };
 
-      foreach (var frame in frames)
+      if (hasTransformFrames)
       {
-        var frameData = new FrameData
+        if (transforms != null)
         {
-          Time = frame.Time
-        };
-
-        if (includeRootTransform)
-        {
-          frameData.RootTransform = new RootTransformData
+          foreach (var transformInfo in transforms)
           {
-            Position = new[] { frame.RootPosition.x, frame.RootPosition.y, frame.RootPosition.z },
-            Rotation = new[] { frame.RootRotation.x, frame.RootRotation.y, frame.RootRotation.z, frame.RootRotation.w }
-          };
-        }
-
-        foreach (var kvp in frame.BoneRotations)
-        {
-          var bone = kvp.Key;
-          var boneName = bone.ToString();
-          var path = bonePaths != null && bonePaths.TryGetValue(bone, out var storedPath) && storedPath != null
-            ? storedPath
-            : boneName;
-          recordedBonePaths.Add(path);
-
-          frameData.BoneRotations.Add(new BoneRotationEntry
-          {
-            BoneName = boneName,
-            Path = path,
-            Rotation = new BoneRotationData
+            data.Transforms.Add(new TransformInfo
             {
-              Rotation = new[] { kvp.Value.x, kvp.Value.y, kvp.Value.z, kvp.Value.w }
-            }
-          });
+              Path = transformInfo?.Path ?? string.Empty,
+              HumanoidBone = transformInfo?.HumanoidBone
+            });
+          }
         }
-
-        data.Frames.Add(frameData);
+        else if (transformCount > 0)
+        {
+          for (int i = 0; i < transformCount; i++)
+          {
+            data.Transforms.Add(new TransformInfo
+            {
+              Path = string.Empty,
+              HumanoidBone = null
+            });
+          }
+        }
       }
 
-      data.Metadata.BoneCount = recordedBonePaths.Count;
+      if (hasTransformFrames)
+      {
+        foreach (var frame in frames)
+        {
+          var frameData = new FrameData
+          {
+            Time = frame.Time
+          };
+
+          var samples = frame.TransformSamples;
+          var expectedCount = data.Transforms.Count;
+          if (expectedCount == 0 && samples != null)
+          {
+            expectedCount = samples.Length;
+          }
+
+          for (int i = 0; i < expectedCount; i++)
+          {
+            var sampleData = new SampleData();
+
+            if (samples != null && samples.Length > i)
+            {
+              var sample = samples[i];
+
+              if (includePositions && sample.HasPosition)
+              {
+                sampleData.Position = new[] { sample.LocalPosition.x, sample.LocalPosition.y, sample.LocalPosition.z };
+              }
+
+              if (includeRotations && sample.HasRotation)
+              {
+                sampleData.Rotation = new[] { sample.LocalRotation.x, sample.LocalRotation.y, sample.LocalRotation.z, sample.LocalRotation.w };
+              }
+
+              if (includeScale && sample.HasScale)
+              {
+                sampleData.Scale = new[] { sample.LocalScale.x, sample.LocalScale.y, sample.LocalScale.z };
+              }
+            }
+
+            frameData.Samples.Add(sampleData);
+          }
+
+          data.Frames.Add(frameData);
+        }
+      }
+
+      if (hasHumanoidFrames)
+      {
+        foreach (var frame in humanoidFrames)
+        {
+          var humanoidFrame = new HumanoidFrameData
+          {
+            Time = frame.Time,
+            BodyPosition = new[] { frame.BodyPosition.x, frame.BodyPosition.y, frame.BodyPosition.z },
+            BodyRotation = new[] { frame.BodyRotation.x, frame.BodyRotation.y, frame.BodyRotation.z, frame.BodyRotation.w },
+            Muscles = frame.Muscles != null ? (float[])frame.Muscles.Clone() : Array.Empty<float>()
+          };
+
+          data.HumanoidFrames.Add(humanoidFrame);
+        }
+      }
 
       var json = JsonConvert.SerializeObject(data, Formatting.Indented);
       return json;
@@ -140,7 +221,8 @@ namespace AnimationClipRecording
         var json = File.ReadAllText(jsonPath);
         var data = JsonConvert.DeserializeObject<AnimationClipJsonData>(json);
 
-        if (data == null || data.Frames == null || data.Frames.Count == 0)
+        if (data == null ||
+            ((data.Frames == null || data.Frames.Count == 0) && (data.HumanoidFrames == null || data.HumanoidFrames.Count == 0)))
         {
           Debug.LogError("AnimationClipConverter: Invalid JSON data");
           return null;
@@ -165,87 +247,213 @@ namespace AnimationClipRecording
 
       clip.legacy = false;
 
-      var bonePathOverrides = animator != null ? BuildHumanoidBonePathMap(animator) : null;
+      var metadata = data.Metadata ?? new AnimationClipMetadata();
 
-      if (data.Frames.Count > 0)
+      if (data.HumanoidFrames != null && data.HumanoidFrames.Count > 0)
       {
-        var firstFrame = data.Frames[0];
+        ApplyHumanoidFrameData(clip, data.HumanoidFrames);
 
-        if (firstFrame.RootTransform != null)
+#if UNITY_EDITOR
+            var humanoidSettings = AnimationUtility.GetAnimationClipSettings(clip);
+            humanoidSettings.loopTime = data.LoopTime;
+            AnimationUtility.SetAnimationClipSettings(clip, humanoidSettings);
+#endif
+
+        clip.EnsureQuaternionContinuity();
+        return clip;
+      }
+
+      var transformInfos = data.Transforms ?? new List<TransformInfo>();
+      var frameCount = data.Frames?.Count ?? 0;
+      if (frameCount == 0)
+      {
+        return clip;
+      }
+
+      if (transformInfos.Count == 0)
+      {
+        var firstSamples = data.Frames[0].Samples;
+        var inferredCount = firstSamples?.Count ?? 0;
+        for (int i = 0; i < inferredCount; i++)
         {
-          var rootPositionX = new AnimationCurve();
-          var rootPositionY = new AnimationCurve();
-          var rootPositionZ = new AnimationCurve();
-          var rootRotationX = new AnimationCurve();
-          var rootRotationY = new AnimationCurve();
-          var rootRotationZ = new AnimationCurve();
-          var rootRotationW = new AnimationCurve();
+          transformInfos.Add(new TransformInfo());
+        }
+      }
 
-          foreach (var frame in data.Frames)
+      var transformCount = transformInfos.Count;
+      var pathOverrides = animator != null ? BuildHumanoidBonePathMap(animator) : null;
+      var resolvedPaths = new List<string>(transformCount);
+      for (int i = 0; i < transformCount; i++)
+      {
+        resolvedPaths.Add(ResolveTransformPath(transformInfos[i], pathOverrides));
+      }
+
+      var recordPositions = metadata.RecordPositions;
+      var recordRotations = metadata.RecordRotations;
+      var recordScale = metadata.RecordScale;
+      var includeRoot = metadata.RecordRootTransform;
+
+      AnimationCurve[] posX = null, posY = null, posZ = null;
+      AnimationCurve[] rotX = null, rotY = null, rotZ = null, rotW = null;
+      AnimationCurve[] scaleX = null, scaleY = null, scaleZ = null;
+
+      Vector3[] lastPosition = null;
+      bool[] hasPosition = null;
+      Quaternion[] lastRotation = null;
+      bool[] hasRotation = null;
+      Vector3[] lastScale = null;
+      bool[] hasScale = null;
+
+      if (recordPositions)
+      {
+        posX = new AnimationCurve[transformCount];
+        posY = new AnimationCurve[transformCount];
+        posZ = new AnimationCurve[transformCount];
+        lastPosition = new Vector3[transformCount];
+        hasPosition = new bool[transformCount];
+        for (int i = 0; i < transformCount; i++)
+        {
+          posX[i] = new AnimationCurve();
+          posY[i] = new AnimationCurve();
+          posZ[i] = new AnimationCurve();
+        }
+      }
+
+      if (recordRotations)
+      {
+        rotX = new AnimationCurve[transformCount];
+        rotY = new AnimationCurve[transformCount];
+        rotZ = new AnimationCurve[transformCount];
+        rotW = new AnimationCurve[transformCount];
+        lastRotation = new Quaternion[transformCount];
+        hasRotation = new bool[transformCount];
+        for (int i = 0; i < transformCount; i++)
+        {
+          rotX[i] = new AnimationCurve();
+          rotY[i] = new AnimationCurve();
+          rotZ[i] = new AnimationCurve();
+          rotW[i] = new AnimationCurve();
+        }
+      }
+
+      if (recordScale)
+      {
+        scaleX = new AnimationCurve[transformCount];
+        scaleY = new AnimationCurve[transformCount];
+        scaleZ = new AnimationCurve[transformCount];
+        lastScale = new Vector3[transformCount];
+        hasScale = new bool[transformCount];
+        for (int i = 0; i < transformCount; i++)
+        {
+          scaleX[i] = new AnimationCurve();
+          scaleY[i] = new AnimationCurve();
+          scaleZ[i] = new AnimationCurve();
+          lastScale[i] = Vector3.one;
+        }
+      }
+
+      foreach (var frame in data.Frames)
+      {
+        var time = frame.Time;
+        var samples = frame.Samples ?? new List<SampleData>();
+
+        for (int i = 0; i < transformCount; i++)
+        {
+          var sample = i < samples.Count ? samples[i] : null;
+
+          if (recordPositions)
           {
-            if (frame.RootTransform != null)
+            Vector3 value;
+            if (sample?.Position != null && sample.Position.Length >= 3)
             {
-              var pos = frame.RootTransform.Position;
-              var rot = frame.RootTransform.Rotation;
-
-              rootPositionX.AddKey(frame.Time, pos[0]);
-              rootPositionY.AddKey(frame.Time, pos[1]);
-              rootPositionZ.AddKey(frame.Time, pos[2]);
-              rootRotationX.AddKey(frame.Time, rot[0]);
-              rootRotationY.AddKey(frame.Time, rot[1]);
-              rootRotationZ.AddKey(frame.Time, rot[2]);
-              rootRotationW.AddKey(frame.Time, rot[3]);
+              value = new Vector3(sample.Position[0], sample.Position[1], sample.Position[2]);
+              lastPosition[i] = value;
+              hasPosition[i] = true;
             }
+            else
+            {
+              value = hasPosition[i] ? lastPosition[i] : Vector3.zero;
+            }
+
+            posX[i].AddKey(time, value.x);
+            posY[i].AddKey(time, value.y);
+            posZ[i].AddKey(time, value.z);
           }
 
-          clip.SetCurve("", typeof(Transform), "localPosition.x", rootPositionX);
-          clip.SetCurve("", typeof(Transform), "localPosition.y", rootPositionY);
-          clip.SetCurve("", typeof(Transform), "localPosition.z", rootPositionZ);
-          clip.SetCurve("", typeof(Transform), "localRotation.x", rootRotationX);
-          clip.SetCurve("", typeof(Transform), "localRotation.y", rootRotationY);
-          clip.SetCurve("", typeof(Transform), "localRotation.z", rootRotationZ);
-          clip.SetCurve("", typeof(Transform), "localRotation.w", rootRotationW);
+          if (recordRotations)
+          {
+            Quaternion value;
+            if (sample?.Rotation != null && sample.Rotation.Length >= 4)
+            {
+              value = NormalizeQuaternion(new Quaternion(sample.Rotation[0], sample.Rotation[1], sample.Rotation[2], sample.Rotation[3]));
+              lastRotation[i] = value;
+              hasRotation[i] = true;
+            }
+            else
+            {
+              value = hasRotation[i] ? lastRotation[i] : Quaternion.identity;
+            }
+
+            rotX[i].AddKey(time, value.x);
+            rotY[i].AddKey(time, value.y);
+            rotZ[i].AddKey(time, value.z);
+            rotW[i].AddKey(time, value.w);
+          }
+
+          if (recordScale)
+          {
+            Vector3 value;
+            if (sample?.Scale != null && sample.Scale.Length >= 3)
+            {
+              value = new Vector3(sample.Scale[0], sample.Scale[1], sample.Scale[2]);
+              lastScale[i] = value;
+              hasScale[i] = true;
+            }
+            else
+            {
+              value = hasScale[i] ? lastScale[i] : Vector3.one;
+            }
+
+            scaleX[i].AddKey(time, value.x);
+            scaleY[i].AddKey(time, value.y);
+            scaleZ[i].AddKey(time, value.z);
+          }
+        }
+      }
+
+      for (int i = 0; i < transformCount; i++)
+      {
+        var path = resolvedPaths[i];
+        if (path == null)
+        {
+          continue;
         }
 
-        var boneIdentifiers = new HashSet<string>();
-        foreach (var frame in data.Frames)
+        if (!includeRoot && string.IsNullOrEmpty(path))
         {
-          foreach (var entry in frame.BoneRotations)
-          {
-            var identifier = ResolveBonePath(entry, bonePathOverrides);
-            boneIdentifiers.Add(identifier);
-          }
+          continue;
         }
 
-        foreach (var boneIdentifier in boneIdentifiers)
+        if (recordPositions && posX != null)
         {
-          var rotX = new AnimationCurve();
-          var rotY = new AnimationCurve();
-          var rotZ = new AnimationCurve();
-          var rotW = new AnimationCurve();
+          clip.SetCurve(path, typeof(Transform), "localPosition.x", posX[i]);
+          clip.SetCurve(path, typeof(Transform), "localPosition.y", posY[i]);
+          clip.SetCurve(path, typeof(Transform), "localPosition.z", posZ[i]);
+        }
 
-          foreach (var frame in data.Frames)
-          {
-            var entry = frame.BoneRotations.Find(e =>
-            {
-              var identifier = ResolveBonePath(e, bonePathOverrides);
-              return identifier == boneIdentifier;
-            });
-            if (entry != null)
-            {
-              var rot = entry.Rotation.Rotation;
-              rotX.AddKey(frame.Time, rot[0]);
-              rotY.AddKey(frame.Time, rot[1]);
-              rotZ.AddKey(frame.Time, rot[2]);
-              rotW.AddKey(frame.Time, rot[3]);
-            }
-          }
+        if (recordRotations && rotX != null)
+        {
+          clip.SetCurve(path, typeof(Transform), "localRotation.x", rotX[i]);
+          clip.SetCurve(path, typeof(Transform), "localRotation.y", rotY[i]);
+          clip.SetCurve(path, typeof(Transform), "localRotation.z", rotZ[i]);
+          clip.SetCurve(path, typeof(Transform), "localRotation.w", rotW[i]);
+        }
 
-          var bonePath = boneIdentifier;
-          clip.SetCurve(bonePath, typeof(Transform), "localRotation.x", rotX);
-          clip.SetCurve(bonePath, typeof(Transform), "localRotation.y", rotY);
-          clip.SetCurve(bonePath, typeof(Transform), "localRotation.z", rotZ);
-          clip.SetCurve(bonePath, typeof(Transform), "localRotation.w", rotW);
+        if (recordScale && scaleX != null)
+        {
+          clip.SetCurve(path, typeof(Transform), "localScale.x", scaleX[i]);
+          clip.SetCurve(path, typeof(Transform), "localScale.y", scaleY[i]);
+          clip.SetCurve(path, typeof(Transform), "localScale.z", scaleZ[i]);
         }
       }
 
@@ -255,7 +463,10 @@ namespace AnimationClipRecording
             AnimationUtility.SetAnimationClipSettings(clip, settings);
 #endif
 
-      clip.EnsureQuaternionContinuity();
+      if (recordRotations)
+      {
+        clip.EnsureQuaternionContinuity();
+      }
 
       return clip;
     }
@@ -318,19 +529,78 @@ namespace AnimationClipRecording
       return string.Join("/", segments.ToArray());
     }
 
-    private static string ResolveBonePath(BoneRotationEntry entry, Dictionary<string, string> overrideMap)
+    private static string ResolveTransformPath(TransformInfo info, Dictionary<string, string> overrideMap)
     {
-      if (!string.IsNullOrEmpty(entry.Path))
+      if (info == null)
       {
-        return entry.Path;
+        return string.Empty;
       }
 
-      if (overrideMap != null && !string.IsNullOrEmpty(entry.BoneName) && overrideMap.TryGetValue(entry.BoneName, out var mappedPath))
+      if (!string.IsNullOrEmpty(info.Path))
+      {
+        return info.Path;
+      }
+
+      if (overrideMap != null && !string.IsNullOrEmpty(info.HumanoidBone) && overrideMap.TryGetValue(info.HumanoidBone, out var mappedPath))
       {
         return mappedPath;
       }
 
-      return entry.BoneName;
+      return info.HumanoidBone ?? string.Empty;
+    }
+
+    private static void ApplyHumanoidFrameData(AnimationClip clip, List<HumanoidFrameData> frames)
+    {
+      if (clip == null || frames == null || frames.Count == 0)
+      {
+        return;
+      }
+
+      AnimationCurve CreateCurve(Func<HumanoidFrameData, float> getter)
+      {
+        var curve = new AnimationCurve();
+        foreach (var frame in frames)
+        {
+          curve.AddKey(frame.Time, getter(frame));
+        }
+        return curve;
+      }
+
+      float GetValue(float[] values, int index, float fallback)
+      {
+        return values != null && values.Length > index ? values[index] : fallback;
+      }
+
+      clip.SetCurve(string.Empty, typeof(Animator), "RootT.x", CreateCurve(frame => GetValue(frame.BodyPosition, 0, 0f)));
+      clip.SetCurve(string.Empty, typeof(Animator), "RootT.y", CreateCurve(frame => GetValue(frame.BodyPosition, 1, 0f)));
+      clip.SetCurve(string.Empty, typeof(Animator), "RootT.z", CreateCurve(frame => GetValue(frame.BodyPosition, 2, 0f)));
+      clip.SetCurve(string.Empty, typeof(Animator), "RootQ.x", CreateCurve(frame => GetValue(frame.BodyRotation, 0, 0f)));
+      clip.SetCurve(string.Empty, typeof(Animator), "RootQ.y", CreateCurve(frame => GetValue(frame.BodyRotation, 1, 0f)));
+      clip.SetCurve(string.Empty, typeof(Animator), "RootQ.z", CreateCurve(frame => GetValue(frame.BodyRotation, 2, 0f)));
+      clip.SetCurve(string.Empty, typeof(Animator), "RootQ.w", CreateCurve(frame => GetValue(frame.BodyRotation, 3, 1f)));
+
+      var muscleNames = HumanTrait.MuscleName;
+      for (int i = 0; i < muscleNames.Length; i++)
+      {
+        var muscleIndex = i;
+        clip.SetCurve(string.Empty, typeof(Animator), muscleNames[i], CreateCurve(frame => GetValue(frame.Muscles, muscleIndex, 0f)));
+      }
+    }
+
+    private static Quaternion NormalizeQuaternion(Quaternion value)
+    {
+      var magnitude = Mathf.Sqrt(value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w);
+      if (magnitude < Mathf.Epsilon)
+      {
+        return Quaternion.identity;
+      }
+
+      var inverse = 1f / magnitude;
+      value.x *= inverse;
+      value.y *= inverse;
+      value.z *= inverse;
+      value.w *= inverse;
+      return value;
     }
 
     public static AnimationClip LoadFromJsonData(string json, Animator animator = null)

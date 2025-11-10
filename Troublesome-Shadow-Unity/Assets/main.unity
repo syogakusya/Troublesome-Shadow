@@ -145,7 +145,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 601943608810144445, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 1
+      value: 0.9992354
+      objectReference: {fileID: 0}
+    - target: {fileID: 601943608810144445, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0.039098047
       objectReference: {fileID: 0}
     - target: {fileID: 601943608810144445, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
       propertyPath: m_LocalRotation.y
@@ -204,6 +208,10 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7869543608362826461, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 7869543608362826461, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
       propertyPath: m_UpdateMode
       value: 1
       objectReference: {fileID: 0}
@@ -213,6 +221,14 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7869543608362826461, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
       propertyPath: m_AnimatePhysics
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7869543608362826461, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
+      propertyPath: m_WarningMessage
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 7869543608362826461, guid: 9bd72731ebe2248478ba4849c274a43b, type: 3}
+      propertyPath: m_ApplyRootMotion
       value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
@@ -404,7 +420,7 @@ MonoBehaviour:
   _torsoAxisFlip: {x: 1, y: 1, z: 1}
   _autoPopulate: 1
   _debugLogging: 0
-  _animationClipPlayer: {fileID: 0}
+  _animationClipPlayer: {fileID: 1856930884}
   _boneMappings: []
 --- !u!114 &1856930881
 MonoBehaviour:
@@ -423,7 +439,7 @@ MonoBehaviour:
   _port: 9000
   _webSocketPath: /pose
   _reconnectDelay: 2
-  _debugLogging: 0
+  _debugLogging: 1
 --- !u!114 &1856930882
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -478,13 +494,18 @@ MonoBehaviour:
   _recordingName: humanoid_motion
   _frameRate: 60
   _recordRootTransform: 1
-  _recordAllHumanBones: 1
+  _recordEntireHierarchy: 1
+  _useHumanoidMuscleCurves: 1
   _selectedBones: 
+  _recordLocalPositions: 0
+  _recordLocalRotations: 0
+  _recordLocalScale: 0
   _saveToAssets: 1
   _assetsPath: Assets/Recordings/AnimationClips
   _exportJson: 1
-  _jsonOutputPath: Recordings/Json
-  _verifyRecording: 1
+  _jsonOutputPath: Assets/Recordings/Json
+  _verifyRecording: 0
+  _debugLogging: 0
 --- !u!1 &2079080364
 GameObject:
   m_ObjectHideFlags: 0

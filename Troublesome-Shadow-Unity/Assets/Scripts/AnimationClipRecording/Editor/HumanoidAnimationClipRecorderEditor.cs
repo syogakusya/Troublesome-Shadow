@@ -28,12 +28,25 @@ namespace AnimationClipRecording.Editor
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Recording Settings", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("_recordRootTransform"));
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("_recordAllHumanBones"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("_useHumanoidMuscleCurves"), new GUIContent("Use Humanoid Muscle Curves"));
 
-            if (!_recorder._recordAllHumanBones)
+            if (_recorder._useHumanoidMuscleCurves)
             {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("_selectedBones"), true);
+                EditorGUILayout.HelpBox("Records HumanPose (root translation/rotation + all Humanoid muscle values). Transform-level options are ignored in this mode.", MessageType.Info);
+            }
+            else
+            {
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_recordRootTransform"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_recordEntireHierarchy"), new GUIContent("Record Entire Hierarchy"));
+                if (!_recorder._recordEntireHierarchy)
+                {
+                    EditorGUILayout.HelpBox("When disabled, only the selected Humanoid bones will be recorded.", MessageType.Info);
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("_selectedBones"), true);
+                }
+
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_recordLocalPositions"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_recordLocalRotations"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_recordLocalScale"));
             }
 
             EditorGUILayout.Space();
@@ -216,4 +229,3 @@ namespace AnimationClipRecording.Editor
     }
 }
 #endif
-
