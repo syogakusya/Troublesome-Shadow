@@ -37,6 +37,7 @@ class _LauncherArgs:
     image_height: Optional[int] = None
     preview: bool = False
     preview_window: str = "MediaPipe Pose"
+    mode: str = "shadow"
     live_seating_editor: bool = True
 
 
@@ -177,6 +178,10 @@ class PoseCaptureLauncherApp:
         height_entry = tk.Entry(frame, textvariable=self.image_height_var)
         add_row("画像高さ", height_entry)
 
+        self.mode_var = tk.StringVar(value=self.args.mode)
+        mode_combo = ttk.Combobox(frame, textvariable=self.mode_var, values=["shadow", "avatar"], state="readonly")
+        add_row("モード", mode_combo)
+
         self.preview_var = tk.BooleanVar(value=self.args.preview)
         self.live_editor_var = tk.BooleanVar(value=self.args.live_seating_editor)
 
@@ -230,6 +235,7 @@ class PoseCaptureLauncherApp:
         self.image_height_var.set("" if self.args.image_height is None else str(self.args.image_height))
         self.preview_var.set(self.args.preview)
         self.preview_window_var.set(self.args.preview_window)
+        self.mode_var.set(self.args.mode)
         self.live_editor_var.set(self.args.live_seating_editor)
         if hasattr(self, "_update_live_editor_state"):
             self._update_live_editor_state()
@@ -256,6 +262,7 @@ class PoseCaptureLauncherApp:
         args.image_height = self._to_optional_int(self.image_height_var.get())
         args.preview = self.preview_var.get()
         args.preview_window = self.preview_window_var.get()
+        args.mode = self.mode_var.get()
         args.live_seating_editor = self.live_editor_var.get()
         return args
 
