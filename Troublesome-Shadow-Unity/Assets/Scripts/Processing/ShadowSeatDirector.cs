@@ -48,6 +48,9 @@ namespace PoseRuntime
 
     /// <summary>
     /// Controls the virtual shadow's seat selection and reaction logic.
+    /// - Moves to a distant empty seat when a human sits in the same or adjacent seat.
+    /// - Drops to the floor anchor when no empty seat remains.
+    /// - Returns to the preferred seat when humans leave and periodically glares at nearby guests.
     /// </summary>
     public class ShadowSeatDirector : MonoBehaviour
     {
