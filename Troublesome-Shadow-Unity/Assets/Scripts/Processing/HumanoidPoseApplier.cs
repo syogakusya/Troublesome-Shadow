@@ -17,11 +17,17 @@ namespace PoseRuntime
     {
         [FormerlySerializedAs("controller")] public AvatarController _controller;
         [FormerlySerializedAs("animator")] public Animator _animator;
+        [FormerlySerializedAs("poseSpaceOrigin")] public Transform _poseSpaceOrigin;
         [FormerlySerializedAs("updateRoot")] public bool _updateRootTransform = true;
         [FormerlySerializedAs("rootPositionOffset")] public Vector3 _rootPositionOffset = Vector3.zero;
         [FormerlySerializedAs("rootRotationOffset")] public Vector3 _rootRotationOffset = Vector3.zero;
         [FormerlySerializedAs("positionLerp")] public float _positionLerp = 12f;
         [FormerlySerializedAs("rotationLerp")] public float _rotationLerp = 15f;
+        [Header("Root Movement")]
+        public bool _trackRootMovement = true;
+        public float _rootMovementScale = 1.0f;
+        public Vector3 _rootMovementAxisScale = Vector3.one;
+        public bool _resetRootOnEnable = false;
         [FormerlySerializedAs("useMetadataRootTranslation")] public bool _useMetadataRootTranslation = true;
         [FormerlySerializedAs("metadataRootKey")] public string _metadataRootKey = "root_center_normalized";
         [FormerlySerializedAs("metadataRootScale")] public Vector3 _metadataRootScale = new Vector3(4f, 0f, -4f);
@@ -72,6 +78,9 @@ namespace PoseRuntime
         private Vector3 _metadataRootOrigin = Vector3.zero;
         private bool _metadataRootOriginCaptured;
         private bool _hasMetadataRootPosition;
+        private Vector3 _initialPelvisPosition = Vector3.zero;
+        private Vector3 _initialRootPosition = Vector3.zero;
+        private bool _initialPelvisPositionCaptured;
 
         private void Awake()
         {
@@ -106,6 +115,7 @@ namespace PoseRuntime
             InitializeAutoRotationOffsets();
 
             ResetMetadataRoot();
+            ResetRootMovementTracking();
         }
 
         private void OnEnable()
@@ -113,6 +123,10 @@ namespace PoseRuntime
             if (_controller != null)
             {
                 _controller.SampleProcessed += OnSampleProcessed;
+            }
+            if (_resetRootOnEnable)
+            {
+                ResetRootMovementTracking();
             }
             if (_debugLogging)
             {
@@ -145,6 +159,7 @@ namespace PoseRuntime
             }
 
             ExtractMetadataRoot(sample);
+            CaptureInitialPelvisPosition();
 
             _hasSample = true;
             _debugFrameCounter++;
@@ -568,6 +583,43 @@ namespace PoseRuntime
             _hasMetadataRootPosition = false;
         }
 
+        private void ResetRootMovementTracking()
+        {
+            _initialPelvisPosition = Vector3.zero;
+            _initialRootPosition = _animator != null ? _animator.transform.position : Vector3.zero;
+            _initialPelvisPositionCaptured = false;
+        }
+
+        private void CaptureInitialPelvisPosition()
+        {
+            if (!_trackRootMovement || _initialPelvisPositionCaptured)
+            {
+                return;
+            }
+
+            if (TryGetJointPosition("LEFT_HIP", out var leftHip) &&
+                TryGetJointPosition("RIGHT_HIP", out var rightHip))
+            {
+                var pelvisPoseSpace = (leftHip + rightHip) * 0.5f;
+                _initialPelvisPosition = ConvertToWorld(pelvisPoseSpace);
+                _initialRootPosition = _animator != null ? _animator.transform.position : Vector3.zero;
+                _initialPelvisPositionCaptured = true;
+                if (_debugLogging)
+                {
+                    Debug.Log($"HumanoidPoseApplier: captured initial pelvis position (world): {_initialPelvisPosition}, root position: {_initialRootPosition}");
+                }
+            }
+        }
+
+        private Vector3 ConvertToWorld(Vector3 posePosition)
+        {
+            if (_poseSpaceOrigin != null)
+            {
+                return _poseSpaceOrigin.TransformPoint(posePosition);
+            }
+            return posePosition;
+        }
+
         private bool TryApplyAdvancedHeadOrientation(HumanoidBoneMapping mapping, Transform boneTransform)
         {
             if (!_useAdvancedHeadOrientation)
@@ -853,10 +905,12 @@ namespace PoseRuntime
                 return;
             }
 
-            var pelvis = (leftHip + rightHip) * 0.5f;
-            var shoulders = (leftShoulder + rightShoulder) * 0.5f;
+            var pelvisPoseSpace = (leftHip + rightHip) * 0.5f;
+            var pelvisWorld = ConvertToWorld(pelvisPoseSpace);
+            var shouldersPoseSpace = (leftShoulder + rightShoulder) * 0.5f;
+            var shouldersWorld = ConvertToWorld(shouldersPoseSpace);
 
-            var up = shoulders - pelvis;
+            var up = shouldersWorld - pelvisWorld;
             if (up.sqrMagnitude < 1e-6f)
             {
                 up = _rootRestUp;
@@ -870,7 +924,9 @@ namespace PoseRuntime
                 up = -up;
             }
 
-            var across = rightShoulder - leftShoulder;
+            var rightShoulderWorld = ConvertToWorld(rightShoulder);
+            var leftShoulderWorld = ConvertToWorld(leftShoulder);
+            var across = rightShoulderWorld - leftShoulderWorld;
             if (across.sqrMagnitude < 1e-6f)
             {
                 across = _rootRestRight;
@@ -900,7 +956,22 @@ namespace PoseRuntime
 
             across = Vector3.Cross(up, forward).normalized;
 
-            var basePosition = pelvis;
+            Vector3 basePosition;
+            if (_trackRootMovement && _initialPelvisPositionCaptured)
+            {
+                var movementDelta = pelvisWorld - _initialPelvisPosition;
+                var scaledMovement = Vector3.Scale(movementDelta * _rootMovementScale, _rootMovementAxisScale);
+                basePosition = _initialRootPosition + scaledMovement;
+                if (_debugLogging && Time.frameCount % 30 == 0)
+                {
+                    Debug.Log($"HumanoidPoseApplier: movementDelta={movementDelta}, scaledMovement={scaledMovement}, basePosition={basePosition}");
+                }
+            }
+            else
+            {
+                basePosition = pelvisWorld;
+            }
+
             Vector3 targetPosition;
             if (_useMetadataRootTranslation && _hasMetadataRootPosition)
             {
