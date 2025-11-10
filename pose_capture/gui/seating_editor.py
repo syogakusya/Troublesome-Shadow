@@ -7,7 +7,7 @@ import logging
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 try:  # pragma: no cover - optional dependency for camera capture
     import cv2  # type: ignore
@@ -56,10 +56,19 @@ class SeatDraft:
 class SeatingEditorApp:
     """Tkinter-based editor for configuring seating layouts."""
 
-    def __init__(self, master: tk.Tk) -> None:
+    def __init__(
+        self,
+        master: tk.Tk,
+        *,
+        on_layout_changed: Optional[Callable[[Optional[SeatingLayout]], None]] = None,
+        on_close: Optional[Callable[[], None]] = None,
+        initial_layout: Optional[SeatingLayout] = None,
+    ) -> None:
         self.master = master
         self.master.title("Seating Layout Editor")
-        self.master.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._on_layout_changed = on_layout_changed
+        self._on_close_callback = on_close
+        self.master.protocol("WM_DELETE_WINDOW", self._handle_close)
 
         self._background_image: Optional[tk.PhotoImage] = None
         self._image_width = 1
@@ -74,6 +83,8 @@ class SeatingEditorApp:
         self._draft_rectangle: Optional[int] = None
 
         self._build_ui()
+        if initial_layout:
+            self.set_layout(initial_layout)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -199,6 +210,7 @@ class SeatingEditorApp:
             self.canvas.delete(label_id)
         self._draw_and_track(seat)
         self._refresh_list()
+        self._notify_layout_change()
 
     def _delete_seat(self) -> None:
         index = self._get_selected_index()
@@ -213,6 +225,7 @@ class SeatingEditorApp:
             self.canvas.delete(label_id)
         self._refresh_list()
         self.status.set(f"座席 {seat.seat_id} を削除しました")
+        self._notify_layout_change()
 
     def _get_selected_index(self) -> Optional[int]:
         selection = self.seat_list.curselection()
@@ -304,6 +317,7 @@ class SeatingEditorApp:
         self._refresh_list()
         self.status.set(f"座席 {seat_id} を追加しました")
         self._current_action = None
+        self._notify_layout_change()
 
     # ------------------------------------------------------------------
     # Layout persistence
@@ -333,6 +347,7 @@ class SeatingEditorApp:
         self._refresh_list()
         self._redraw_all_seats()
         self.status.set(f"{path.name} を読み込みました")
+        self._notify_layout_change()
 
     def _save_layout(self) -> None:
         if not self._seats:
@@ -384,7 +399,50 @@ class SeatingEditorApp:
     def _clamp(value: float) -> float:
         return max(0.0, min(1.0, value))
 
-    def _on_close(self) -> None:
+    def _notify_layout_change(self) -> None:
+        if not self._on_layout_changed:
+            return
+        layout: Optional[SeatingLayout]
+        if self._seats:
+            try:
+                layout = SeatingLayout(seat.to_region() for seat in self._seats)
+            except Exception as exc:  # pragma: no cover - defensive
+                LOGGER.exception("Failed to build seating layout: %s", exc)
+                return
+        else:
+            layout = None
+        try:
+            self._on_layout_changed(layout)
+        except Exception as exc:  # pragma: no cover - callback errors
+            LOGGER.exception("Layout change callback failed: %s", exc)
+
+    def set_layout(self, layout: Optional[SeatingLayout]) -> None:
+        """Replace the editable seats with a new layout."""
+
+        self._seats = []
+        self._seat_rectangles.clear()
+        self._seat_labels.clear()
+        if layout:
+            self._seats = [
+                SeatDraft(
+                    seat_id=seat.seat_id,
+                    x_min=seat.x_min,
+                    y_min=seat.y_min,
+                    x_max=seat.x_max,
+                    y_max=seat.y_max,
+                )
+                for seat in layout.seats
+            ]
+        self._refresh_list()
+        self._redraw_all_seats()
+        self._notify_layout_change()
+
+    def _handle_close(self) -> None:
+        if self._on_close_callback:
+            try:
+                self._on_close_callback()
+            except Exception as exc:  # pragma: no cover - defensive
+                LOGGER.exception("Seating editor close callback failed: %s", exc)
         self.master.destroy()
 
 

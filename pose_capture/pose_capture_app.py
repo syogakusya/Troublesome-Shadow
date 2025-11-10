@@ -36,6 +36,7 @@ class PoseCaptureApp:
         self.config = config
         self._running = False
         self._calibration_data: Optional[dict] = None
+        self._seating_layout = config.seating_layout
 
     async def __aenter__(self) -> "PoseCaptureApp":
         await self.start()
@@ -76,10 +77,14 @@ class PoseCaptureApp:
             merged.update(self.config.metadata)
         if self.config.mode:
             merged["mode"] = self.config.mode
-        if self.config.seating_layout:
-            seating_metadata = self.config.seating_layout.evaluate(skeleton)
+        if self._seating_layout:
+            seating_metadata = self._seating_layout.evaluate(skeleton)
             if seating_metadata:
                 merged["seating"] = seating_metadata
+            else:
+                merged.pop("seating", None)
+        else:
+            merged.pop("seating", None)
         skeleton.metadata = merged
         LOGGER.debug("Enriched skeleton payload: %s", json.dumps(skeleton.to_dict()))
         return skeleton
@@ -92,6 +97,12 @@ class PoseCaptureApp:
         data = json.loads(path.read_text())
         LOGGER.debug("Calibration data: %s", data)
         return data
+
+    async def update_seating_layout(self, layout: Optional[SeatingLayout]) -> None:
+        """Replace the active seating layout while the app is running."""
+
+        self._seating_layout = layout
+        self.config.seating_layout = layout
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
