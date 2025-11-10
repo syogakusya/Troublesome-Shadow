@@ -12,6 +12,8 @@ from tkinter import ttk
 from typing import Optional
 
 from ..pose_capture_app import CaptureConfig, PoseCaptureApp, build_config_from_args, create_argument_parser
+from ..seating import SeatingLayout
+from .seating_editor import SeatingEditorApp
 
 LOGGER = logging.getLogger(__name__)
 
@@ -75,6 +77,15 @@ class _CaptureWorker(threading.Thread):
             except Exception as exc:  # pragma: no cover - defensive guard
                 LOGGER.exception("Failed to stop capture cleanly: %s", exc)
 
+    def update_seating_layout(self, layout: Optional[SeatingLayout]) -> None:
+        if not self.loop or not self._app:
+            return
+        future = asyncio.run_coroutine_threadsafe(self._app.update_seating_layout(layout), self.loop)
+        try:
+            future.result(timeout=5)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            LOGGER.exception("Failed to push seating layout update: %s", exc)
+
 
 class PoseCaptureLauncherApp:
     """Tkinter UI for configuring and launching :mod:`pose_capture_app`."""
@@ -88,6 +99,9 @@ class PoseCaptureLauncherApp:
         defaults = self._parser.parse_args([])
         self.args = _LauncherArgs(**vars(defaults))
         self._worker: Optional[_CaptureWorker] = None
+        self._active_seating_layout: Optional[SeatingLayout] = None
+        self._seating_editor_window: Optional[tk.Toplevel] = None
+        self._seating_editor: Optional[SeatingEditorApp] = None
 
         self._build_ui()
         self._sync_from_args()
@@ -180,6 +194,9 @@ class PoseCaptureLauncherApp:
         self.stop_button = tk.Button(button_frame, text="停止", command=self._stop_capture, state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT, padx=8)
 
+        self.edit_seating_button = tk.Button(button_frame, text="座席を編集", command=self._open_seating_editor)
+        self.edit_seating_button.pack(side=tk.LEFT)
+
         self.status = tk.StringVar(value="待機中")
         tk.Label(self.master, textvariable=self.status, anchor=tk.W).pack(fill=tk.X, padx=12, pady=(0, 12))
 
@@ -231,6 +248,8 @@ class PoseCaptureLauncherApp:
         try:
             args = self._collect_args()
             config = build_config_from_args(args)
+            if self._active_seating_layout is not None:
+                config.seating_layout = self._active_seating_layout
         except Exception as exc:
             LOGGER.exception("Failed to start capture: %s", exc)
             messagebox.showerror("起動エラー", str(exc))
@@ -267,9 +286,52 @@ class PoseCaptureLauncherApp:
         self.stop_button.config(state=tk.DISABLED)
         self.status.set("停止しました")
 
+    def _open_seating_editor(self) -> None:
+        if self._seating_editor_window and self._seating_editor_window.winfo_exists():
+            self._seating_editor_window.deiconify()
+            self._seating_editor_window.lift()
+            return
+
+        initial_layout = self._active_seating_layout
+        if initial_layout is None:
+            path_str = self.seating_var.get().strip()
+            if path_str:
+                path = Path(path_str)
+                try:
+                    initial_layout = SeatingLayout.from_json(path)
+                except Exception as exc:  # pragma: no cover - parsing guard
+                    LOGGER.error("Failed to load seating layout from %s: %s", path, exc)
+                    messagebox.showerror("読み込みエラー", f"座席レイアウトを読み込めませんでした: {exc}")
+
+        window = tk.Toplevel(self.master)
+        window.title("座席レイアウトの編集")
+
+        def _on_close() -> None:
+            self._seating_editor_window = None
+            self._seating_editor = None
+
+        editor = SeatingEditorApp(
+            window,
+            on_layout_changed=self._handle_layout_update,
+            on_close=_on_close,
+            initial_layout=initial_layout,
+        )
+        self._seating_editor_window = window
+        self._seating_editor = editor
+
     def _on_close(self) -> None:
         self._stop_capture()
         self.master.destroy()
+
+    def _handle_layout_update(self, layout: Optional[SeatingLayout]) -> None:
+        self._active_seating_layout = layout
+        if layout:
+            seats = len(layout.seats)
+            self.status.set(f"座席レイアウトを更新 ({seats}席)")
+        else:
+            self.status.set("座席レイアウトを無効化しました")
+        if self._worker:
+            self._worker.update_seating_layout(layout)
 
     @staticmethod
     def _path_to_string(path: Optional[Path]) -> str:

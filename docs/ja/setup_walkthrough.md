@@ -49,11 +49,11 @@ cd Troublesome-Shadow
    - `--preview` を付けると MediaPipe ランドマークと座席領域を重畳したプレビューウィンドウが開きます。
    - `--mode` で Unity 側に通知する動作モードを切り替えられます。`shadow` は影インスタレーション、`avatar` は Humanoid アバターのリアルタイム追従・録画モードを示します。【F:pose_capture/pose_capture_app.py†L26-L120】
    - 複数カメラが接続されている場合は `--camera` のインデックスを切り替えて確認します。
-   - CLI 引数を毎回入力するのが面倒な場合は `python -m pose_capture.gui.launcher` を起動し、GUI で同じ項目を指定して「開始」をクリックすることもできます。【F:pose_capture/gui/launcher.py†L1-L230】
+   - CLI 引数を毎回入力するのが面倒な場合は `python -m pose_capture.gui.launcher` を起動し、GUI で同じ項目を指定して「開始」をクリックすることもできます。GUI 右下の「座席を編集」ボタンを押すと座席エディタが別ウィンドウで開き、配置を変更すると即座に PoseCaptureApp へ反映されます。【F:pose_capture/gui/launcher.py†L1-L260】【F:pose_capture/gui/seating_editor.py†L1-L420】
 
 ## 3. 座席レイアウトの作成
 
-1. `python -m pose_capture.gui.seating_editor` を実行し、背景画像（もしくは「カメラから取得」ボタンでキャプチャしたフレーム）上で椅子をドラッグして座席を登録します。保存すると正規化座標を含む JSON が生成されます。【F:pose_capture/gui/seating_editor.py†L1-L236】
+1. GUI ランチャーから「座席を編集」を押すか、`python -m pose_capture.gui.seating_editor` を単体で実行し、背景画像（もしくは「カメラから取得」ボタンでキャプチャしたフレーム）上で椅子をドラッグして座席を登録します。保存すると正規化座標を含む JSON が生成され、ランチャーから開いた場合は変更がそのまま Python ランタイムへ送信されます。【F:pose_capture/gui/launcher.py†L120-L240】【F:pose_capture/gui/seating_editor.py†L1-L420】
 2. 既存ファイルを直接編集する場合は `docs/examples/seating_layout.example.json` をコピーし、現場の椅子数に合わせて調整します。
    ```bash
    cp docs/examples/seating_layout.example.json seating.json
@@ -70,7 +70,13 @@ cd Troublesome-Shadow
      --seating-config ./seating.json \
      --preview
    ```
-   - `Meta.seating` に占有状況が含まれていることを確認するには、ターミナルに表示されるログまたは `--debug` オプションを利用します。【F:pose_capture/pose_capture_app.py†L57-L85】【F:pose_capture/seating.py†L32-L115】
+   - `Meta.seating` に占有状況が含まれていることを確認するには、ターミナルに表示されるログまたは `--debug` オプションを利用します。【F:pose_capture/pose_capture_app.py†L26-L110】【F:pose_capture/seating.py†L32-L117】
+
+### 座席矩形と着席判定の仕組み
+
+- 各座席はカメラ画像に対する正規化座標（0.0〜1.0）で矩形が定義され、`SeatRegion.contains` が MediaPipe の骨格の腰中心が矩形内に収まっているかを確認します。【F:pose_capture/seating.py†L12-L61】
+- 着席中と判定された場合は `SeatingLayout.evaluate` が `Meta.seating.activeSeatId` と座席ごとの境界情報を生成し、外れた場合は `Meta.seating` が削除されます。座席矩形に「ランドマークがいくつ入ったら」といった閾値はなく、腰中心1点が収まっているかどうかで決まります。【F:pose_capture/pose_capture_app.py†L57-L110】【F:pose_capture/seating.py†L62-L115】
+- 信頼度は矩形の中心からどれだけ余裕があるかで決まり、矩形の半分の幅・高さを基準に余白を比率化した値（0.0〜1.0）が計算されます。矩形のサイズを広げると座っているとみなされる許容範囲が広がり、狭めると厳しくなります。【F:pose_capture/seating.py†L117-L147】
 
 ## 4. Unity プロジェクトの準備
 
