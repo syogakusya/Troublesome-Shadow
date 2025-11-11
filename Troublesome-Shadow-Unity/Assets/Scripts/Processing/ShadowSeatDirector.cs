@@ -35,7 +35,7 @@ namespace PoseRuntime
                 else
                 {
                     rotation = fallback != null ? fallback.rotation : Quaternion.identity;
-                }
+            }
             }
             else if (_anchor != null)
             {
@@ -128,6 +128,9 @@ namespace PoseRuntime
         private bool _onFloor;
         private float _lastGlareTime = -999f;
         private bool _isMoving;
+        
+        private string _lastActiveSeatId;
+        private Dictionary<string, bool> _lastOccupancy = new Dictionary<string, bool>();
 
         public bool IsMoving => _isMoving;
 
@@ -346,8 +349,67 @@ namespace PoseRuntime
                 _lastDebugLogTime = Time.time;
             }
 
+            if (!HasSeatingChanged(snapshot))
+            {
+                return;
+            }
+
             UpdateOccupancy(snapshot);
             EvaluateShadowResponse(snapshot);
+            
+            _lastActiveSeatId = snapshot.ActiveSeatId;
+            _lastOccupancy.Clear();
+            foreach (var seatId in snapshot.SeatOrder)
+            {
+                if (snapshot.TryGetOccupancy(seatId, out var occupied))
+                {
+                    _lastOccupancy[seatId] = occupied;
+                }
+            }
+        }
+
+        private bool HasSeatingChanged(SeatingSnapshot snapshot)
+        {
+            var currentActiveSeatId = snapshot.ActiveSeatId ?? string.Empty;
+            var lastActiveSeatId = _lastActiveSeatId ?? string.Empty;
+            
+            if (currentActiveSeatId != lastActiveSeatId)
+            {
+                if (_debugLogSeating)
+                {
+                    Debug.Log($"[ShadowSeatDirector] アクティブ座席が変化: {lastActiveSeatId} -> {currentActiveSeatId}");
+                }
+                return true;
+            }
+
+            foreach (var seatId in snapshot.SeatOrder)
+            {
+                if (snapshot.TryGetOccupancy(seatId, out var occupied))
+                {
+                    if (!_lastOccupancy.TryGetValue(seatId, out var lastOccupied) || lastOccupied != occupied)
+                    {
+                        if (_debugLogSeating)
+                        {
+                            Debug.Log($"[ShadowSeatDirector] 座席 {seatId} の占有状態が変化: {(_lastOccupancy.TryGetValue(seatId, out var last) ? last.ToString() : "(なし)")} -> {occupied}");
+                        }
+                        return true;
+                    }
+                }
+            }
+
+            foreach (var kvp in _lastOccupancy)
+            {
+                if (!snapshot.TryGetOccupancy(kvp.Key, out var currentOccupied) || currentOccupied != kvp.Value)
+                {
+                    if (_debugLogSeating)
+                    {
+                        Debug.Log($"[ShadowSeatDirector] 座席 {kvp.Key} の占有状態が変化: {kvp.Value} -> {(snapshot.TryGetOccupancy(kvp.Key, out var current) ? current.ToString() : "(なし)")}");
+                    }
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void UpdateOccupancy(SeatingSnapshot snapshot)
@@ -417,9 +479,13 @@ namespace PoseRuntime
                 return;
             }
 
-            if (!_onFloor)
+            if (!_onFloor && humanSeat != null)
             {
-                MaybeGlareAt(humanSeat, snapshot.Confidence);
+                if (_debugLogSeating)
+                {
+                    Debug.Log($"[ShadowSeatDirector] その他の場合: Glareアニメーションのみ再生します。");
+                }
+                StartCoroutine(WaitForGlareOnly());
             }
         }
 
@@ -502,7 +568,7 @@ namespace PoseRuntime
             _lastGlareTime = Time.time;
             if (!IsAvatarMode())
             {
-                TriggerAnimator(_animGlareTrigger);
+            TriggerAnimator(_animGlareTrigger);
             }
             RotateTowardsSeat(seat);
         }
@@ -576,7 +642,7 @@ namespace PoseRuntime
 
             if (!IsAvatarMode())
             {
-                TriggerAnimator(trigger);
+            TriggerAnimator(trigger);
             }
             var targetPosition = seat.AnchorPosition + Vector3.up * seat._heightOffset;
             var targetRotation = seat.ResolveRotation(ShadowRoot, _flipRotation);
@@ -638,7 +704,7 @@ namespace PoseRuntime
             }
             else
             {
-                BeginMovement(_floorAnchor.position, targetRotation, _movementDuration);
+            BeginMovement(_floorAnchor.position, targetRotation, _movementDuration);
             }
         }
 
@@ -732,7 +798,7 @@ namespace PoseRuntime
                 {
                     Debug.Log($"[ShadowSeatDirector] 移動開始 (Lerp移動): 距離 = {distance:F2}m, 時間 = {duration:F2}秒, 目標位置 = {position}");
                 }
-                _moveRoutine = StartCoroutine(MoveRoutine(root, position, rotation, duration));
+            _moveRoutine = StartCoroutine(MoveRoutine(root, position, rotation, duration));
             }
         }
 
@@ -1066,23 +1132,11 @@ namespace PoseRuntime
 
         private void HandleOtherSeatOccupancy(ShadowSeat humanSeat)
         {
-            var target = FindBestSeat(reference: humanSeat, requireGap: false, allowCurrent: false);
-            if (target != null)
+            if (_debugLogSeating)
             {
-                if (_debugLogSeating)
-                {
-                    Debug.Log($"[ShadowSeatDirector] 移動先座席を選択: {target._id} (index={target._index})");
-                }
-                StartCoroutine(WaitForGlareThenStandupThenMove(target));
+                Debug.Log($"[ShadowSeatDirector] 別の席に人が座りました。移動せず、Glareのみ再生します。");
             }
-            else
-            {
-                if (_debugLogSeating)
-                {
-                    Debug.Log($"[ShadowSeatDirector] 移動できる座席が見つかりませんでした。移動せず、Glareのみ再生します。");
-                }
-                StartCoroutine(WaitForGlareOnly());
-            }
+            StartCoroutine(WaitForGlareOnly());
         }
 
         private IEnumerator WaitForGlareThenStandupThenMove(ShadowSeat targetSeat)
@@ -1108,7 +1162,20 @@ namespace PoseRuntime
 
             yield return StartCoroutine(WaitForAnimationState("Glare", 5.0f));
 
-            yield return StartCoroutine(WaitForStandupAnimationThenMoveInternal(targetSeat));
+            yield return StartCoroutine(WaitForIdleState(0.1f));
+
+            if (_animator != null && !IsAvatarMode() && IsInState("Idle") && _currentSeat != null)
+            {
+                if (_debugLogAnimations)
+                {
+                    Debug.Log($"[ShadowSeatDirector] Idleステートに戻りました。standupアニメーションを開始します。");
+                }
+                yield return StartCoroutine(WaitForStandupAnimationThenMoveInternal(targetSeat));
+            }
+            else
+            {
+                yield return StartCoroutine(WaitForStandupAnimationThenMoveInternal(targetSeat));
+            }
         }
 
         private IEnumerator WaitForGlareOnly()
@@ -1252,6 +1319,29 @@ namespace PoseRuntime
             else
             {
                 MoveShadowToFloor();
+            }
+        }
+
+        private IEnumerator WaitForIdleState(float maxWaitTime)
+        {
+            if (_animator == null)
+            {
+                yield break;
+            }
+
+            var elapsedTime = 0f;
+            while (elapsedTime < maxWaitTime)
+            {
+                if (IsInState("Idle"))
+                {
+                    if (_debugLogAnimations)
+                    {
+                        Debug.Log("[ShadowSeatDirector] Idleステートに遷移しました");
+                    }
+                    yield break;
+                }
+                elapsedTime += Time.deltaTime;
+                yield return null;
             }
         }
     }
