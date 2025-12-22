@@ -14,7 +14,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
       propertyPath: m_LocalPosition.z
@@ -67,7 +67,7 @@ PrefabInstance:
     - target: {fileID: -2717395650310496025, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
-      objectReference: {fileID: 2100000, guid: aaddffe38381a60428eb1aeab1ba8b85, type: 2}
+      objectReference: {fileID: 2100000, guid: ba1de3422641ef2499d4ac6537f55dfa, type: 2}
     - target: {fileID: 919132149155446097, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
       propertyPath: m_Name
       value: HumanDummy_M White
@@ -94,15 +94,23 @@ PrefabInstance:
       objectReference: {fileID: 9100000, guid: 3892afedcf0a5ad4ab2df7f47ef8b187, type: 2}
     - target: {fileID: 5866666021909216657, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
       propertyPath: m_UpdateMode
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5866666021909216657, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
       propertyPath: m_CullingMode
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5866666021909216657, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
-      propertyPath: m_AnimatePhysics
+      propertyPath: m_StabilizeFeet
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
+      propertyPath: m_AnimatePhysics
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
+      propertyPath: m_ApplyRootMotion
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -159,7 +167,7 @@ MonoBehaviour:
   _clipRecorder: {fileID: 8399405848358587347}
   _clipPlayer: {fileID: 4916903510033369953}
   _modeSource: 1
-  _manualMode: 1
+  _manualMode: 0
   _metadataKey: mode
   _shadowTokens:
   - shadow
@@ -174,6 +182,7 @@ MonoBehaviour:
   _shadowOnlyComponents:
   - {fileID: 5898232967717275631}
   - {fileID: 2521059891174657153}
+  - {fileID: 962802832640510362}
   _avatarOnlyComponents: []
 --- !u!114 &8399405848358587347
 MonoBehaviour:
@@ -216,7 +225,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AnimationClipRecording.HumanoidAnimationClipPlayer
   _animator: {fileID: 7869543608362826461}
-  _animationClip: {fileID: 7400000, guid: 3ff691778e3c24a2badbf08c69595a3b, type: 2}
+  _animationClip: {fileID: 0}
   _playOnStart: 0
   _loop: 0
   _speed: 1
@@ -295,6 +304,7 @@ MonoBehaviour:
   _autoPopulate: 1
   _debugLogging: 0
   _animationClipPlayer: {fileID: 4916903510033369953}
+  _shadowSeatDirector: {fileID: 0}
   _boneMappings: []
 --- !u!114 &962802832640510362
 MonoBehaviour:
@@ -303,7 +313,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3503167532966410781}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0d196f85e1d84c8db28f967b789dd4c6, type: 3}
   m_Name: 
@@ -311,41 +321,60 @@ MonoBehaviour:
   _shadowRoot: {fileID: 4311652260893728935}
   _avatarController: {fileID: 8642589063684106184}
   _animator: {fileID: 7869543608362826461}
+  _modeCoordinator: {fileID: 447877904341114138}
   _seats:
-  - _id: 0
+  - _id: seat-01
     _anchor: {fileID: 0}
     _lookTarget: {fileID: 0}
     _heightOffset: 0
-  - _id: 1
+  - _id: seat-02
     _anchor: {fileID: 0}
     _lookTarget: {fileID: 0}
     _heightOffset: 0
-  - _id: 2
+  - _id: seat-03
     _anchor: {fileID: 0}
     _lookTarget: {fileID: 0}
     _heightOffset: 0
-  _defaultSeatId: 0
+  _defaultSeatId: seat-02
   _floorAnchor: {fileID: 0}
   _floorLookTarget: {fileID: 0}
+  _globalHeightOffset: 0.3
+  _useFeetPivot: 0
+  _lockFeetHeight: 0
+  _useManualFeetHeight: 0
+  _manualFeetHeightWorldY: 0
   _movementDuration: 0.75
   _lookDuration: 0.35
   _glareCooldown: 2
   _glareConfidenceThreshold: 0.2
   _useWalkingAnimation: 1
-  _walkSpeed: 2
-  _walkRotationSpeed: 5
-  _stoppingDistance: 0.5
-  _minWalkDistance: 1
+  _walkSpeed: 0.5
+  _walkRotationSpeed: 3
+  _stoppingDistance: 0.05
+  _minWalkDistance: 0.05
+  _flipRotation: 0
+  _enableFootIK: 0
+  _footIkGroundMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  _footIkRayDistance: 1.2
+  _footIkOffset: 0.02
   _animSeatIndexParam: SeatIndex
   _animOnFloorParam: OnFloor
   _animWalkSpeedParam: WalkSpeed
-  _animScootTrigger: Scoot
   _animSurprisedTrigger: Surprised
   _animGlareTrigger: Glare
   _animFrustratedTrigger: Frustrated
   _animSitTrigger: Sit
-  _debugLogSeating: 0
+  _animSitOnFloorTrigger: SitOnFloor
+  _animStandupTrigger: Standup
+  _animStandupStateName: standup
+  _animSitStateName: Sit
+  _debugLogSeating: 1
+  _debugLogAnimations: 1
   _debugLogInterval: 1
+  _enableDebugSeating: 1
+  _debugToggleKey: 32
 --- !u!114 &5898232967717275631
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -84,10 +84,6 @@ namespace PoseRuntime
         public Transform _floorAnchor;
         public Transform _floorLookTarget;
         public float _globalHeightOffset = 0f;
-        public bool _useFeetPivot = true;
-        public bool _lockFeetHeight = true;
-        public bool _useManualFeetHeight = false;
-        public float _manualFeetHeightWorldY = 0f;
 
         [Header("Timing")]
         public float _movementDuration = 0.75f;
@@ -102,12 +98,6 @@ namespace PoseRuntime
         public float _stoppingDistance = 0.5f;
         public float _minWalkDistance = 1.0f;
         public bool _flipRotation = false;
-
-        [Header("Foot IK")]
-        public bool _enableFootIK = true;
-        public LayerMask _footIkGroundMask = ~0;
-        public float _footIkRayDistance = 1.2f;
-        public float _footIkOffset = 0.02f;
 
         [Header("Animator Parameters")]
         public string _animSeatIndexParam = "SeatIndex";
@@ -143,13 +133,6 @@ namespace PoseRuntime
 
         private string _lastActiveSeatId;
         private Dictionary<string, bool> _lastOccupancy = new Dictionary<string, bool>();
-        private bool _pivotCached;
-        private Vector3 _pivotLocal;
-        private bool _feetHeightCaptured;
-        private float _feetHeightWorldY;
-        private Transform _leftFoot;
-        private Transform _rightFoot;
-        private SkinnedMeshRenderer _skinned;
 
         public bool IsMoving => _isMoving;
 
@@ -173,7 +156,6 @@ namespace PoseRuntime
                 _animator = GetComponentInChildren<Animator>();
             }
             BuildSeatLookup();
-            CachePivot();
             SnapToDefaultSeat();
             InitializeDebugOccupancy();
         }
@@ -239,154 +221,6 @@ namespace PoseRuntime
             }
         }
 
-        private void CachePivot()
-        {
-            if (!_useFeetPivot)
-            {
-                _pivotCached = false;
-                _leftFoot = null;
-                _rightFoot = null;
-                _skinned = null;
-                return;
-            }
-
-            var root = ShadowRoot;
-            if (root == null)
-            {
-                _pivotCached = false;
-                _leftFoot = null;
-                _rightFoot = null;
-                _skinned = null;
-                return;
-            }
-
-            Vector3 pivotWorld;
-            var found = false;
-
-            if (_animator != null && _animator.isHuman)
-            {
-                var left = _animator.GetBoneTransform(HumanBodyBones.LeftFoot);
-                var right = _animator.GetBoneTransform(HumanBodyBones.RightFoot);
-                _leftFoot = left;
-                _rightFoot = right;
-                if (left != null && right != null)
-                {
-                    var l = left.position;
-                    var r = right.position;
-                    pivotWorld = new Vector3((l.x + r.x) * 0.5f, Mathf.Min(l.y, r.y), (l.z + r.z) * 0.5f);
-                    found = true;
-                }
-                else if (left != null)
-                {
-                    pivotWorld = left.position;
-                    found = true;
-                }
-                else if (right != null)
-                {
-                    pivotWorld = right.position;
-                    found = true;
-                }
-                else
-                {
-                    pivotWorld = default;
-                }
-            }
-            else
-            {
-                pivotWorld = default;
-            }
-
-            if (!found)
-            {
-                if (_skinned == null)
-                {
-                    _skinned = GetComponentInChildren<SkinnedMeshRenderer>();
-                }
-                if (_skinned != null)
-                {
-                    var b = _skinned.bounds;
-                    pivotWorld = new Vector3(b.center.x, b.min.y, b.center.z);
-                    found = true;
-                }
-            }
-
-            if (!found)
-            {
-                _pivotCached = false;
-                return;
-            }
-
-            _pivotLocal = root.InverseTransformPoint(pivotWorld);
-            _pivotCached = true;
-
-            if (_lockFeetHeight && !_useManualFeetHeight && !_feetHeightCaptured)
-            {
-                _feetHeightWorldY = pivotWorld.y;
-                _feetHeightCaptured = true;
-            }
-        }
-
-        private bool TryGetFeetPivotWorld(out Vector3 pivotWorld)
-        {
-            if (_leftFoot != null && _rightFoot != null)
-            {
-                var l = _leftFoot.position;
-                var r = _rightFoot.position;
-                pivotWorld = new Vector3((l.x + r.x) * 0.5f, Mathf.Min(l.y, r.y), (l.z + r.z) * 0.5f);
-                return true;
-            }
-
-            if (_leftFoot != null)
-            {
-                pivotWorld = _leftFoot.position;
-                return true;
-            }
-
-            if (_rightFoot != null)
-            {
-                pivotWorld = _rightFoot.position;
-                return true;
-            }
-
-            if (_skinned == null)
-            {
-                _skinned = GetComponentInChildren<SkinnedMeshRenderer>();
-            }
-            if (_skinned != null)
-            {
-                var b = _skinned.bounds;
-                pivotWorld = new Vector3(b.center.x, b.min.y, b.center.z);
-                return true;
-            }
-
-            pivotWorld = default;
-            return false;
-        }
-
-        private void EnsurePivot()
-        {
-            if (_useFeetPivot && !_pivotCached)
-            {
-                CachePivot();
-            }
-        }
-
-        private Vector3 ResolveRootPosition(Vector3 desiredPivotWorld, Quaternion desiredRotation)
-        {
-            if (!_useFeetPivot)
-            {
-                return desiredPivotWorld;
-            }
-
-            EnsurePivot();
-            if (!_pivotCached)
-            {
-                return desiredPivotWorld;
-            }
-
-            return desiredPivotWorld - (desiredRotation * _pivotLocal);
-        }
-
         private void Update()
         {
             if (Input.GetKeyDown(_debugToggleKey))
@@ -409,145 +243,44 @@ namespace PoseRuntime
 
         private void LateUpdate()
         {
-            if (!_lockFeetHeight || IsAvatarMode())
-            {
-                return;
-            }
-
-            if (_isMoving)
-            {
-                return;
-            }
-
-            if (_animator != null && !IsAvatarMode())
-            {
-                var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
-                if (stateInfo.IsName("Walk") || stateInfo.IsName("standup") || stateInfo.IsName("Sit") || stateInfo.IsName("SitOnFloor"))
-                {
-                    return;
-                }
-            }
-
-            if (_useManualFeetHeight)
-            {
-                _feetHeightWorldY = _manualFeetHeightWorldY;
-                _feetHeightCaptured = true;
-            }
-
-            if (!TryGetFeetPivotWorld(out var pivotWorld))
-            {
-                return;
-            }
-
-            if (!_feetHeightCaptured)
-            {
-                _feetHeightWorldY = pivotWorld.y;
-                _feetHeightCaptured = true;
-                return;
-            }
-
-            var deltaY = _feetHeightWorldY - pivotWorld.y;
-            if (Mathf.Abs(deltaY) < 0.0001f)
+            if (_isMoving || _onFloor || _currentSeat == null)
             {
                 return;
             }
 
             var root = ShadowRoot;
-            root.position += Vector3.up * deltaY;
-        }
-
-        private void OnAnimatorIK(int layerIndex)
-        {
-            if (!_enableFootIK || _animator == null || !_animator.isHuman)
+            if (root == null)
             {
                 return;
             }
 
-            if (IsAvatarMode())
+            var shouldSnap = true;
+            if (_animator != null && !IsAvatarMode())
             {
-                return;
-            }
+                var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
+                var isSit = !string.IsNullOrEmpty(_animSitStateName) && stateInfo.IsName(_animSitStateName);
+                var isStandup = !string.IsNullOrEmpty(_animStandupStateName) && stateInfo.IsName(_animStandupStateName);
+                var isIdle = stateInfo.IsName("Idle");
 
-            ApplyFootIK(AvatarIKGoal.LeftFoot, HumanBodyBones.LeftFoot);
-            ApplyFootIK(AvatarIKGoal.RightFoot, HumanBodyBones.RightFoot);
-        }
-
-        private void ApplyFootIK(AvatarIKGoal goal, HumanBodyBones bone)
-        {
-            var foot = _animator.GetBoneTransform(bone);
-            if (foot == null)
-            {
-                _animator.SetIKPositionWeight(goal, 0f);
-                _animator.SetIKRotationWeight(goal, 0f);
-                return;
-            }
-
-            var origin = foot.position + Vector3.up * (_footIkRayDistance * 0.5f);
-            if (Physics.Raycast(origin, Vector3.down, out var hit, _footIkRayDistance, _footIkGroundMask, QueryTriggerInteraction.Ignore))
-            {
-                var ikPosition = hit.point + Vector3.up * _footIkOffset;
-                _animator.SetIKPositionWeight(goal, 1f);
-                _animator.SetIKRotationWeight(goal, 1f);
-                _animator.SetIKPosition(goal, ikPosition);
-
-                // 足の向きが暴れないように、ルートの前方を基準に法線上へ投影して使用する
-                var root = ShadowRoot;
-                var baseForward = root != null ? root.forward : transform.forward;
-                var projected = Vector3.ProjectOnPlane(baseForward, hit.normal);
-                if (projected.sqrMagnitude < 0.0001f)
+                // Sit/Standup 再生中はスナップしない
+                if (isSit || isStandup)
                 {
-                    projected = Vector3.ProjectOnPlane(Vector3.forward, hit.normal);
+                    return;
                 }
-                if (projected.sqrMagnitude < 0.0001f)
-                {
-                    projected = Vector3.Cross(hit.normal, Vector3.right);
-                }
-                var forward = projected.normalized;
-                _animator.SetIKRotation(goal, Quaternion.LookRotation(forward, hit.normal));
+
+                shouldSnap = isIdle;
             }
-            else
+
+            if (!shouldSnap)
             {
-                _animator.SetIKPositionWeight(goal, 0f);
-                _animator.SetIKRotationWeight(goal, 0f);
-            }
-        }
-
-        private float ResolveFeetHeightWorldY(float fallbackY)
-        {
-            if (!_lockFeetHeight)
-            {
-                return fallbackY;
+                return;
             }
 
-            if (_useManualFeetHeight)
-            {
-                return _manualFeetHeightWorldY;
-            }
-
-            if (_feetHeightCaptured)
-            {
-                return _feetHeightWorldY;
-            }
-
-            if (TryGetFeetPivotWorld(out var pivotWorld))
-            {
-                _feetHeightWorldY = pivotWorld.y;
-                _feetHeightCaptured = true;
-                return _feetHeightWorldY;
-            }
-
-            return fallbackY;
-        }
-
-        private Vector3 ApplyFeetHeightLock(Vector3 desiredPivotWorld)
-        {
-            if (!_lockFeetHeight)
-            {
-                return desiredPivotWorld;
-            }
-
-            desiredPivotWorld.y = ResolveFeetHeightWorldY(desiredPivotWorld.y);
-            return desiredPivotWorld;
+            var seat = _currentSeat;
+            var correctedPosition = seat.AnchorPosition + Vector3.up * (seat._heightOffset + _globalHeightOffset);
+            var correctedRotation = seat.ResolveRotation(root, _flipRotation);
+            root.position = correctedPosition;
+            root.rotation = correctedRotation;
         }
 
         private void HandleDebugInput()
@@ -960,8 +693,6 @@ namespace PoseRuntime
             var targetPosition = seat.AnchorPosition + Vector3.up * (seat._heightOffset + _globalHeightOffset);
             var targetRotation = seat.ResolveRotation(ShadowRoot, _flipRotation);
             var shouldStandup = !_onFloor && _currentSeat != null && _animator != null && !IsAvatarMode();
-            targetPosition = ApplyFeetHeightLock(targetPosition);
-            targetPosition = ResolveRootPosition(targetPosition, targetRotation);
 
             if (_debugLogAnimations)
             {
@@ -1017,8 +748,6 @@ namespace PoseRuntime
 
             var targetRotation = ResolveFloorRotation();
             var targetPosition = _floorAnchor.position + Vector3.up * _globalHeightOffset;
-            targetPosition = ApplyFeetHeightLock(targetPosition);
-            targetPosition = ResolveRootPosition(targetPosition, targetRotation);
 
             if (shouldStandup)
             {
@@ -1075,8 +804,7 @@ namespace PoseRuntime
             var rotation = seat.ResolveRotation(root, _flipRotation);
             var pivotPosition = seat.AnchorPosition + Vector3.up * (seat._heightOffset + _globalHeightOffset);
             root.rotation = rotation;
-            pivotPosition = ApplyFeetHeightLock(pivotPosition);
-            root.position = ResolveRootPosition(pivotPosition, rotation);
+            root.position = pivotPosition;
             _currentSeat = seat;
             _onFloor = false;
             seat._isShadowOccupied = true;
@@ -1148,8 +876,11 @@ namespace PoseRuntime
             var speed = Mathf.Max(0.001f, _walkSpeed);
             var maxWalkTime = Mathf.Max(1f, Vector3.Distance(startPosition, horizontalTarget) / speed + 2f);
             var elapsed = 0f;
+            var lastPlanarDistance = Vector2.Distance(new Vector2(root.position.x, root.position.z), new Vector2(horizontalTarget.x, horizontalTarget.z));
+            var stagnationFrames = 0;
 
-            while (Vector3.Distance(root.position, horizontalTarget) > _stoppingDistance)
+            while (Vector3.Distance(new Vector3(root.position.x, horizontalTarget.y, root.position.z),
+                       new Vector3(horizontalTarget.x, horizontalTarget.y, horizontalTarget.z)) > _stoppingDistance)
             {
                 var direction = (horizontalTarget - root.position);
                 direction.y = 0f;
@@ -1171,7 +902,9 @@ namespace PoseRuntime
                         moveDistance = distance;
                     }
 
-                    root.position += direction * moveDistance;
+                    var nextPos = root.position + direction * moveDistance;
+                    nextPos.y = Mathf.MoveTowards(root.position.y, targetPosition.y, speed * Time.deltaTime);
+                    root.position = nextPos;
                 }
                 else if (_debugLogAnimations)
                 {
@@ -1188,11 +921,30 @@ namespace PoseRuntime
                 lastPosition = root.position;
                 elapsed += Time.deltaTime;
 
+                var planarDistance = Vector2.Distance(new Vector2(root.position.x, root.position.z), new Vector2(horizontalTarget.x, horizontalTarget.z));
+                if (planarDistance > lastPlanarDistance - 0.001f)
+                {
+                    stagnationFrames++;
+                }
+                else
+                {
+                    stagnationFrames = 0;
+                }
+                lastPlanarDistance = planarDistance;
+
                 if (elapsed > maxWalkTime)
                 {
                     if (_debugLogAnimations)
                     {
                         Debug.Log($"[ShadowSeatDirector] WalkToTargetRoutine: timeout reached (elapsed={elapsed:F2}s, max={maxWalkTime:F2}s, remainingDist={Vector3.Distance(root.position, horizontalTarget):F3}). Forcing arrive.");
+                    }
+                    break;
+                }
+                if (stagnationFrames > 30)
+                {
+                    if (_debugLogAnimations)
+                    {
+                        Debug.Log($"[ShadowSeatDirector] WalkToTargetRoutine: planar stagnation detected, breaking (planarDist={planarDistance:F3}).");
                     }
                     break;
                 }
@@ -1523,8 +1275,7 @@ namespace PoseRuntime
                 var correctedRotation = seat.ResolveRotation(root, _flipRotation);
 
                 root.rotation = correctedRotation;
-                correctedPosition = ApplyFeetHeightLock(correctedPosition);
-                root.position = ResolveRootPosition(correctedPosition, correctedRotation);
+                root.position = correctedPosition;
 
                 _currentSeat = seat;
                 if (_animator != null && !string.IsNullOrEmpty(_animSeatIndexParam) && !IsAvatarMode())
@@ -1683,16 +1434,12 @@ namespace PoseRuntime
             {
                 var targetPosition = targetSeat.AnchorPosition + Vector3.up * (targetSeat._heightOffset + _globalHeightOffset);
                 var targetRotation = targetSeat.ResolveRotation(ShadowRoot, _flipRotation);
-                targetPosition = ApplyFeetHeightLock(targetPosition);
-                targetPosition = ResolveRootPosition(targetPosition, targetRotation);
                 yield return StartCoroutine(WaitForStandupAnimationThenMove(targetPosition, targetRotation, _movementDuration, targetSeat, _animSitTrigger));
             }
             else
             {
                 var targetRotation = ResolveFloorRotation();
                 var targetPosition = _floorAnchor.position + Vector3.up * _globalHeightOffset;
-                targetPosition = ApplyFeetHeightLock(targetPosition);
-                targetPosition = ResolveRootPosition(targetPosition, targetRotation);
                 yield return StartCoroutine(WaitForStandupAnimationThenMove(targetPosition, targetRotation, _movementDuration, null, null));
             }
         }
@@ -1796,6 +1543,15 @@ namespace PoseRuntime
             {
                 if (IsInState("Idle"))
                 {
+                    if (_currentSeat != null && !_onFloor)
+                    {
+                        var seat = _currentSeat;
+                        var root = ShadowRoot;
+                        var correctedPosition = seat.AnchorPosition + Vector3.up * (seat._heightOffset + _globalHeightOffset);
+                        var correctedRotation = seat.ResolveRotation(root, _flipRotation);
+                        root.position = correctedPosition;
+                        root.rotation = correctedRotation;
+                    }
                     if (_debugLogAnimations)
                     {
                         Debug.Log("[ShadowSeatDirector] Idleステートに遷移しました");
