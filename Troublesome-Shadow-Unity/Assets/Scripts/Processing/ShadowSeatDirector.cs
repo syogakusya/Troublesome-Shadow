@@ -23,7 +23,7 @@ namespace PoseRuntime
         public Quaternion ResolveRotation(Transform fallback, bool flipRotation = false)
         {
             Quaternion rotation;
-            
+
             if (_lookTarget != null)
             {
                 var direction = _lookTarget.position - AnchorPosition;
@@ -35,7 +35,7 @@ namespace PoseRuntime
                 else
                 {
                     rotation = fallback != null ? fallback.rotation : Quaternion.identity;
-            }
+                }
             }
             else if (_anchor != null)
             {
@@ -83,6 +83,11 @@ namespace PoseRuntime
         public string _defaultSeatId;
         public Transform _floorAnchor;
         public Transform _floorLookTarget;
+        public float _globalHeightOffset = 0f;
+        public bool _useFeetPivot = true;
+        public bool _lockFeetHeight = true;
+        public bool _useManualFeetHeight = false;
+        public float _manualFeetHeightWorldY = 0f;
 
         [Header("Timing")]
         public float _movementDuration = 0.75f;
@@ -98,6 +103,12 @@ namespace PoseRuntime
         public float _minWalkDistance = 1.0f;
         public bool _flipRotation = false;
 
+        [Header("Foot IK")]
+        public bool _enableFootIK = true;
+        public LayerMask _footIkGroundMask = ~0;
+        public float _footIkRayDistance = 1.2f;
+        public float _footIkOffset = 0.02f;
+
         [Header("Animator Parameters")]
         public string _animSeatIndexParam = "SeatIndex";
         public string _animOnFloorParam = "OnFloor";
@@ -107,6 +118,7 @@ namespace PoseRuntime
         public string _animFrustratedTrigger = "Frustrated";
         public string _animSitTrigger = "Sit";
         public string _animSitOnFloorTrigger = "SitOnFloor";
+        public string _animStandupTrigger = "Standup";
         public string _animStandupStateName = "standup";
         public string _animSitStateName = "Sit";
 
@@ -115,7 +127,7 @@ namespace PoseRuntime
         public bool _debugLogAnimations = true;
         public float _debugLogInterval = 1.0f;
         private float _lastDebugLogTime = 0f;
-        
+
         [Header("Debug Seating Control")]
         public bool _enableDebugSeating = false;
         public KeyCode _debugToggleKey = KeyCode.F1;
@@ -128,9 +140,16 @@ namespace PoseRuntime
         private bool _onFloor;
         private float _lastGlareTime = -999f;
         private bool _isMoving;
-        
+
         private string _lastActiveSeatId;
         private Dictionary<string, bool> _lastOccupancy = new Dictionary<string, bool>();
+        private bool _pivotCached;
+        private Vector3 _pivotLocal;
+        private bool _feetHeightCaptured;
+        private float _feetHeightWorldY;
+        private Transform _leftFoot;
+        private Transform _rightFoot;
+        private SkinnedMeshRenderer _skinned;
 
         public bool IsMoving => _isMoving;
 
@@ -138,8 +157,8 @@ namespace PoseRuntime
 
         private bool IsAvatarMode()
         {
-            return _modeCoordinator != null && 
-                   _modeCoordinator.CurrentMode.HasValue && 
+            return _modeCoordinator != null &&
+                   _modeCoordinator.CurrentMode.HasValue &&
                    _modeCoordinator.CurrentMode.Value == InteractionMode.HumanoidAvatar;
         }
 
@@ -149,11 +168,16 @@ namespace PoseRuntime
             {
                 _modeCoordinator = GetComponent<InteractionModeCoordinator>();
             }
+            if (_animator == null)
+            {
+                _animator = GetComponentInChildren<Animator>();
+            }
             BuildSeatLookup();
+            CachePivot();
             SnapToDefaultSeat();
             InitializeDebugOccupancy();
         }
-        
+
         private void InitializeDebugOccupancy()
         {
             _debugOccupancy.Clear();
@@ -215,6 +239,154 @@ namespace PoseRuntime
             }
         }
 
+        private void CachePivot()
+        {
+            if (!_useFeetPivot)
+            {
+                _pivotCached = false;
+                _leftFoot = null;
+                _rightFoot = null;
+                _skinned = null;
+                return;
+            }
+
+            var root = ShadowRoot;
+            if (root == null)
+            {
+                _pivotCached = false;
+                _leftFoot = null;
+                _rightFoot = null;
+                _skinned = null;
+                return;
+            }
+
+            Vector3 pivotWorld;
+            var found = false;
+
+            if (_animator != null && _animator.isHuman)
+            {
+                var left = _animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+                var right = _animator.GetBoneTransform(HumanBodyBones.RightFoot);
+                _leftFoot = left;
+                _rightFoot = right;
+                if (left != null && right != null)
+                {
+                    var l = left.position;
+                    var r = right.position;
+                    pivotWorld = new Vector3((l.x + r.x) * 0.5f, Mathf.Min(l.y, r.y), (l.z + r.z) * 0.5f);
+                    found = true;
+                }
+                else if (left != null)
+                {
+                    pivotWorld = left.position;
+                    found = true;
+                }
+                else if (right != null)
+                {
+                    pivotWorld = right.position;
+                    found = true;
+                }
+                else
+                {
+                    pivotWorld = default;
+                }
+            }
+            else
+            {
+                pivotWorld = default;
+            }
+
+            if (!found)
+            {
+                if (_skinned == null)
+                {
+                    _skinned = GetComponentInChildren<SkinnedMeshRenderer>();
+                }
+                if (_skinned != null)
+                {
+                    var b = _skinned.bounds;
+                    pivotWorld = new Vector3(b.center.x, b.min.y, b.center.z);
+                    found = true;
+                }
+            }
+
+            if (!found)
+            {
+                _pivotCached = false;
+                return;
+            }
+
+            _pivotLocal = root.InverseTransformPoint(pivotWorld);
+            _pivotCached = true;
+
+            if (_lockFeetHeight && !_useManualFeetHeight && !_feetHeightCaptured)
+            {
+                _feetHeightWorldY = pivotWorld.y;
+                _feetHeightCaptured = true;
+            }
+        }
+
+        private bool TryGetFeetPivotWorld(out Vector3 pivotWorld)
+        {
+            if (_leftFoot != null && _rightFoot != null)
+            {
+                var l = _leftFoot.position;
+                var r = _rightFoot.position;
+                pivotWorld = new Vector3((l.x + r.x) * 0.5f, Mathf.Min(l.y, r.y), (l.z + r.z) * 0.5f);
+                return true;
+            }
+
+            if (_leftFoot != null)
+            {
+                pivotWorld = _leftFoot.position;
+                return true;
+            }
+
+            if (_rightFoot != null)
+            {
+                pivotWorld = _rightFoot.position;
+                return true;
+            }
+
+            if (_skinned == null)
+            {
+                _skinned = GetComponentInChildren<SkinnedMeshRenderer>();
+            }
+            if (_skinned != null)
+            {
+                var b = _skinned.bounds;
+                pivotWorld = new Vector3(b.center.x, b.min.y, b.center.z);
+                return true;
+            }
+
+            pivotWorld = default;
+            return false;
+        }
+
+        private void EnsurePivot()
+        {
+            if (_useFeetPivot && !_pivotCached)
+            {
+                CachePivot();
+            }
+        }
+
+        private Vector3 ResolveRootPosition(Vector3 desiredPivotWorld, Quaternion desiredRotation)
+        {
+            if (!_useFeetPivot)
+            {
+                return desiredPivotWorld;
+            }
+
+            EnsurePivot();
+            if (!_pivotCached)
+            {
+                return desiredPivotWorld;
+            }
+
+            return desiredPivotWorld - (desiredRotation * _pivotLocal);
+        }
+
         private void Update()
         {
             if (Input.GetKeyDown(_debugToggleKey))
@@ -233,6 +405,149 @@ namespace PoseRuntime
             {
                 HandleDebugInput();
             }
+        }
+
+        private void LateUpdate()
+        {
+            if (!_lockFeetHeight || IsAvatarMode())
+            {
+                return;
+            }
+
+            if (_isMoving)
+            {
+                return;
+            }
+
+            if (_animator != null && !IsAvatarMode())
+            {
+                var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
+                if (stateInfo.IsName("Walk") || stateInfo.IsName("standup") || stateInfo.IsName("Sit") || stateInfo.IsName("SitOnFloor"))
+                {
+                    return;
+                }
+            }
+
+            if (_useManualFeetHeight)
+            {
+                _feetHeightWorldY = _manualFeetHeightWorldY;
+                _feetHeightCaptured = true;
+            }
+
+            if (!TryGetFeetPivotWorld(out var pivotWorld))
+            {
+                return;
+            }
+
+            if (!_feetHeightCaptured)
+            {
+                _feetHeightWorldY = pivotWorld.y;
+                _feetHeightCaptured = true;
+                return;
+            }
+
+            var deltaY = _feetHeightWorldY - pivotWorld.y;
+            if (Mathf.Abs(deltaY) < 0.0001f)
+            {
+                return;
+            }
+
+            var root = ShadowRoot;
+            root.position += Vector3.up * deltaY;
+        }
+
+        private void OnAnimatorIK(int layerIndex)
+        {
+            if (!_enableFootIK || _animator == null || !_animator.isHuman)
+            {
+                return;
+            }
+
+            if (IsAvatarMode())
+            {
+                return;
+            }
+
+            ApplyFootIK(AvatarIKGoal.LeftFoot, HumanBodyBones.LeftFoot);
+            ApplyFootIK(AvatarIKGoal.RightFoot, HumanBodyBones.RightFoot);
+        }
+
+        private void ApplyFootIK(AvatarIKGoal goal, HumanBodyBones bone)
+        {
+            var foot = _animator.GetBoneTransform(bone);
+            if (foot == null)
+            {
+                _animator.SetIKPositionWeight(goal, 0f);
+                _animator.SetIKRotationWeight(goal, 0f);
+                return;
+            }
+
+            var origin = foot.position + Vector3.up * (_footIkRayDistance * 0.5f);
+            if (Physics.Raycast(origin, Vector3.down, out var hit, _footIkRayDistance, _footIkGroundMask, QueryTriggerInteraction.Ignore))
+            {
+                var ikPosition = hit.point + Vector3.up * _footIkOffset;
+                _animator.SetIKPositionWeight(goal, 1f);
+                _animator.SetIKRotationWeight(goal, 1f);
+                _animator.SetIKPosition(goal, ikPosition);
+
+                // 足の向きが暴れないように、ルートの前方を基準に法線上へ投影して使用する
+                var root = ShadowRoot;
+                var baseForward = root != null ? root.forward : transform.forward;
+                var projected = Vector3.ProjectOnPlane(baseForward, hit.normal);
+                if (projected.sqrMagnitude < 0.0001f)
+                {
+                    projected = Vector3.ProjectOnPlane(Vector3.forward, hit.normal);
+                }
+                if (projected.sqrMagnitude < 0.0001f)
+                {
+                    projected = Vector3.Cross(hit.normal, Vector3.right);
+                }
+                var forward = projected.normalized;
+                _animator.SetIKRotation(goal, Quaternion.LookRotation(forward, hit.normal));
+            }
+            else
+            {
+                _animator.SetIKPositionWeight(goal, 0f);
+                _animator.SetIKRotationWeight(goal, 0f);
+            }
+        }
+
+        private float ResolveFeetHeightWorldY(float fallbackY)
+        {
+            if (!_lockFeetHeight)
+            {
+                return fallbackY;
+            }
+
+            if (_useManualFeetHeight)
+            {
+                return _manualFeetHeightWorldY;
+            }
+
+            if (_feetHeightCaptured)
+            {
+                return _feetHeightWorldY;
+            }
+
+            if (TryGetFeetPivotWorld(out var pivotWorld))
+            {
+                _feetHeightWorldY = pivotWorld.y;
+                _feetHeightCaptured = true;
+                return _feetHeightWorldY;
+            }
+
+            return fallbackY;
+        }
+
+        private Vector3 ApplyFeetHeightLock(Vector3 desiredPivotWorld)
+        {
+            if (!_lockFeetHeight)
+            {
+                return desiredPivotWorld;
+            }
+
+            desiredPivotWorld.y = ResolveFeetHeightWorldY(desiredPivotWorld.y);
+            return desiredPivotWorld;
         }
 
         private void HandleDebugInput()
@@ -306,7 +621,7 @@ namespace PoseRuntime
                     break;
                 }
             }
-            
+
             var occupancy = new Dictionary<string, bool>(_debugOccupancy);
             var order = _seats.Where(s => s != null && !string.IsNullOrEmpty(s._id)).Select(s => s._id).ToList();
             return new SeatingSnapshot(activeSeatId, string.IsNullOrEmpty(activeSeatId) ? 0f : 1f, occupancy, order);
@@ -356,7 +671,7 @@ namespace PoseRuntime
 
             UpdateOccupancy(snapshot);
             EvaluateShadowResponse(snapshot);
-            
+
             _lastActiveSeatId = snapshot.ActiveSeatId;
             _lastOccupancy.Clear();
             foreach (var seatId in snapshot.SeatOrder)
@@ -372,7 +687,7 @@ namespace PoseRuntime
         {
             var currentActiveSeatId = snapshot.ActiveSeatId ?? string.Empty;
             var lastActiveSeatId = _lastActiveSeatId ?? string.Empty;
-            
+
             if (currentActiveSeatId != lastActiveSeatId)
             {
                 if (_debugLogSeating)
@@ -497,7 +812,7 @@ namespace PoseRuntime
             }
 
             var allHumanOccupied = _seats.Count > 0 && _seats.All(s => s != null && s._isHumanOccupied);
-            
+
             if (allHumanOccupied)
             {
                 if (_debugLogSeating)
@@ -568,7 +883,7 @@ namespace PoseRuntime
             _lastGlareTime = Time.time;
             if (!IsAvatarMode())
             {
-            TriggerAnimator(_animGlareTrigger);
+                TriggerAnimator(_animGlareTrigger);
             }
             RotateTowardsSeat(seat);
         }
@@ -599,6 +914,8 @@ namespace PoseRuntime
 
         private void MoveShadowToSeat(ShadowSeat seat, string trigger, bool force)
         {
+            var arrivalTrigger = string.IsNullOrEmpty(trigger) ? _animSitTrigger : trigger;
+
             if (seat == null)
             {
                 MoveShadowToFloor();
@@ -640,24 +957,28 @@ namespace PoseRuntime
                 Debug.Log($"[ShadowSeatDirector] 座席への移動開始: {seat._id} (index={seat._index}), 目標位置 = {seat.AnchorPosition}");
             }
 
-            if (!IsAvatarMode())
-            {
-            TriggerAnimator(trigger);
-            }
-            var targetPosition = seat.AnchorPosition + Vector3.up * seat._heightOffset;
+            var targetPosition = seat.AnchorPosition + Vector3.up * (seat._heightOffset + _globalHeightOffset);
             var targetRotation = seat.ResolveRotation(ShadowRoot, _flipRotation);
-            
-            if (_animator != null && !IsAvatarMode() && IsInState("Idle") && _currentSeat != null)
+            var shouldStandup = !_onFloor && _currentSeat != null && _animator != null && !IsAvatarMode();
+            targetPosition = ApplyFeetHeightLock(targetPosition);
+            targetPosition = ResolveRootPosition(targetPosition, targetRotation);
+
+            if (_debugLogAnimations)
+            {
+                Debug.Log($"[ShadowSeatDirector] 座席移動開始: seat={seat._id}, idx={seat._index}, arrivalTrigger={(string.IsNullOrEmpty(arrivalTrigger) ? "(empty)" : arrivalTrigger)}, standup={shouldStandup}");
+            }
+
+            if (shouldStandup)
             {
                 if (_debugLogAnimations)
                 {
                     Debug.Log($"[ShadowSeatDirector] Idleステート（座っている状態）から移動開始。standupアニメーション完了を待機します。");
                 }
-                StartCoroutine(WaitForStandupAnimationThenMove(targetPosition, targetRotation, _movementDuration, seat));
+                StartCoroutine(WaitForStandupAnimationThenMove(targetPosition, targetRotation, _movementDuration, seat, arrivalTrigger));
             }
             else
             {
-                StartCoroutine(MoveToSeatWithCompletion(seat, targetPosition, targetRotation, _movementDuration));
+                StartCoroutine(MoveToSeatWithCompletion(seat, targetPosition, targetRotation, _movementDuration, arrivalTrigger));
             }
         }
 
@@ -667,6 +988,8 @@ namespace PoseRuntime
             {
                 return;
             }
+
+            var shouldStandup = !_onFloor && _currentSeat != null && _animator != null && !IsAvatarMode();
 
             foreach (var seat in _seats)
             {
@@ -693,25 +1016,28 @@ namespace PoseRuntime
             }
 
             var targetRotation = ResolveFloorRotation();
-            
-            if (_animator != null && !IsAvatarMode() && IsInState("Idle") && _currentSeat != null)
+            var targetPosition = _floorAnchor.position + Vector3.up * _globalHeightOffset;
+            targetPosition = ApplyFeetHeightLock(targetPosition);
+            targetPosition = ResolveRootPosition(targetPosition, targetRotation);
+
+            if (shouldStandup)
             {
                 if (_debugLogAnimations)
                 {
                     Debug.Log($"[ShadowSeatDirector] Idleステート（座っている状態）から床へ移動開始。standupアニメーション完了を待機します。");
                 }
-                StartCoroutine(WaitForStandupAnimationThenMove(_floorAnchor.position, targetRotation, _movementDuration, null));
+                StartCoroutine(WaitForStandupAnimationThenMove(targetPosition, targetRotation, _movementDuration, null));
             }
             else
             {
-            BeginMovement(_floorAnchor.position, targetRotation, _movementDuration);
+                BeginMovement(targetPosition, targetRotation, _movementDuration);
             }
         }
 
         private Quaternion ResolveFloorRotation()
         {
             Quaternion rotation;
-            
+
             if (_floorLookTarget != null)
             {
                 var direction = _floorLookTarget.position - _floorAnchor.position;
@@ -746,8 +1072,11 @@ namespace PoseRuntime
             }
 
             var root = ShadowRoot;
-            root.position = seat.AnchorPosition + Vector3.up * seat._heightOffset;
-            root.rotation = seat.ResolveRotation(root, _flipRotation);
+            var rotation = seat.ResolveRotation(root, _flipRotation);
+            var pivotPosition = seat.AnchorPosition + Vector3.up * (seat._heightOffset + _globalHeightOffset);
+            root.rotation = rotation;
+            pivotPosition = ApplyFeetHeightLock(pivotPosition);
+            root.position = ResolveRootPosition(pivotPosition, rotation);
             _currentSeat = seat;
             _onFloor = false;
             seat._isShadowOccupied = true;
@@ -798,7 +1127,7 @@ namespace PoseRuntime
                 {
                     Debug.Log($"[ShadowSeatDirector] 移動開始 (Lerp移動): 距離 = {distance:F2}m, 時間 = {duration:F2}秒, 目標位置 = {position}");
                 }
-            _moveRoutine = StartCoroutine(MoveRoutine(root, position, rotation, duration));
+                _moveRoutine = StartCoroutine(MoveRoutine(root, position, rotation, duration));
             }
         }
 
@@ -814,7 +1143,11 @@ namespace PoseRuntime
             }
 
             var startPosition = root.position;
-            var horizontalTarget = new Vector3(targetPosition.x, root.position.y, targetPosition.z);
+            var horizontalTarget = new Vector3(targetPosition.x, targetPosition.y, targetPosition.z);
+            var lastPosition = root.position;
+            var speed = Mathf.Max(0.001f, _walkSpeed);
+            var maxWalkTime = Mathf.Max(1f, Vector3.Distance(startPosition, horizontalTarget) / speed + 2f);
+            var elapsed = 0f;
 
             while (Vector3.Distance(root.position, horizontalTarget) > _stoppingDistance)
             {
@@ -832,13 +1165,36 @@ namespace PoseRuntime
                     var targetLookRotation = Quaternion.LookRotation(direction);
                     root.rotation = Quaternion.Slerp(root.rotation, targetLookRotation, Time.deltaTime * _walkRotationSpeed);
 
-                    var moveDistance = _walkSpeed * Time.deltaTime;
+                    var moveDistance = speed * Time.deltaTime;
                     if (moveDistance > distance)
                     {
                         moveDistance = distance;
                     }
 
                     root.position += direction * moveDistance;
+                }
+                else if (_debugLogAnimations)
+                {
+                    Debug.Log($"[ShadowSeatDirector] WalkToTargetRoutine: distance too small ({distance:F4}), breaking.");
+                    break;
+                }
+
+                if (_animator != null && !string.IsNullOrEmpty(_animWalkSpeedParam) && !IsAvatarMode())
+                {
+                    var frameSpeed = Vector3.Distance(root.position, lastPosition) / Mathf.Max(Time.deltaTime, 0.0001f);
+                    _animator.SetFloat(_animWalkSpeedParam, frameSpeed);
+                }
+
+                lastPosition = root.position;
+                elapsed += Time.deltaTime;
+
+                if (elapsed > maxWalkTime)
+                {
+                    if (_debugLogAnimations)
+                    {
+                        Debug.Log($"[ShadowSeatDirector] WalkToTargetRoutine: timeout reached (elapsed={elapsed:F2}s, max={maxWalkTime:F2}s, remainingDist={Vector3.Distance(root.position, horizontalTarget):F3}). Forcing arrive.");
+                    }
+                    break;
                 }
 
                 yield return null;
@@ -870,10 +1226,6 @@ namespace PoseRuntime
                 {
                     TriggerAnimator(_animSitOnFloorTrigger);
                 }
-                else if (!string.IsNullOrEmpty(_animSitTrigger))
-                {
-                    TriggerAnimator(_animSitTrigger);
-                }
             }
 
             _moveRoutine = null;
@@ -894,6 +1246,7 @@ namespace PoseRuntime
             var startPos = root.position;
             var startRot = root.rotation;
             var elapsed = 0f;
+            var lastPos = startPos;
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
@@ -901,12 +1254,19 @@ namespace PoseRuntime
                 t = Mathf.SmoothStep(0f, 1f, t);
                 root.position = Vector3.Lerp(startPos, position, t);
                 root.rotation = Quaternion.Slerp(startRot, rotation, t);
+
+                if (_animator != null && !string.IsNullOrEmpty(_animWalkSpeedParam) && !IsAvatarMode())
+                {
+                    var frameSpeed = Vector3.Distance(root.position, lastPos) / Mathf.Max(Time.deltaTime, 0.0001f);
+                    _animator.SetFloat(_animWalkSpeedParam, frameSpeed);
+                }
+                lastPos = root.position;
                 yield return null;
             }
 
             root.position = position;
             root.rotation = rotation;
-            
+
             if (_debugLogAnimations)
             {
                 Debug.Log($"[ShadowSeatDirector] 移動完了 (Lerp移動): 到達位置 = {position}");
@@ -926,12 +1286,8 @@ namespace PoseRuntime
                 {
                     TriggerAnimator(_animSitOnFloorTrigger);
                 }
-                else if (!string.IsNullOrEmpty(_animSitTrigger))
-                {
-                    TriggerAnimator(_animSitTrigger);
-                }
             }
-            
+
             _moveRoutine = null;
             _isMoving = false;
         }
@@ -1008,6 +1364,44 @@ namespace PoseRuntime
             _animator.SetTrigger(trigger);
         }
 
+        private void TriggerStandupAnimation()
+        {
+            if (_animator == null || IsAvatarMode())
+            {
+                return;
+            }
+
+            if (string.IsNullOrEmpty(_animStandupTrigger))
+            {
+                return;
+            }
+
+            if (IsInStandupState())
+            {
+                return;
+            }
+
+            TriggerAnimator(_animStandupTrigger);
+        }
+
+        private bool IsInStandupState()
+        {
+            if (_animator == null)
+            {
+                return false;
+            }
+
+            var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
+
+            if (string.IsNullOrEmpty(_animStandupStateName))
+            {
+                return false;
+            }
+
+            var hash = Animator.StringToHash(_animStandupStateName);
+            return stateInfo.shortNameHash == hash || stateInfo.fullPathHash == hash || stateInfo.IsName(_animStandupStateName);
+        }
+
         private bool IsInState(string stateName)
         {
             if (_animator == null || string.IsNullOrEmpty(stateName))
@@ -1019,13 +1413,15 @@ namespace PoseRuntime
             return stateInfo.IsName(stateName);
         }
 
-        private IEnumerator WaitForStandupAnimationThenMove(Vector3 targetPosition, Quaternion targetRotation, float duration, ShadowSeat targetSeat = null)
+        private IEnumerator WaitForStandupAnimationThenMove(Vector3 targetPosition, Quaternion targetRotation, float duration, ShadowSeat targetSeat = null, string arrivalTrigger = null)
         {
-            if (_animator == null || string.IsNullOrEmpty(_animStandupStateName))
+            var canPlayStandup = _animator != null && !IsAvatarMode() && !string.IsNullOrEmpty(_animStandupStateName) && !string.IsNullOrEmpty(_animStandupTrigger);
+
+            if (!canPlayStandup)
             {
                 if (targetSeat != null)
                 {
-                    StartCoroutine(MoveToSeatWithCompletion(targetSeat, targetPosition, targetRotation, duration));
+                    StartCoroutine(MoveToSeatWithCompletion(targetSeat, targetPosition, targetRotation, duration, arrivalTrigger));
                 }
                 else
                 {
@@ -1034,6 +1430,9 @@ namespace PoseRuntime
                 yield break;
             }
 
+            TriggerStandupAnimation();
+            yield return null;
+
             var maxWaitTime = 5.0f;
             var elapsedTime = 0f;
             var standupStarted = false;
@@ -1041,8 +1440,10 @@ namespace PoseRuntime
             while (elapsedTime < maxWaitTime)
             {
                 var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
-                
-                if (!standupStarted && stateInfo.IsName(_animStandupStateName))
+
+                var isStandup = IsInStandupState();
+
+                if (!standupStarted && isStandup)
                 {
                     standupStarted = true;
                     if (_debugLogAnimations)
@@ -1051,9 +1452,9 @@ namespace PoseRuntime
                     }
                 }
 
-                if (standupStarted && stateInfo.IsName(_animStandupStateName))
+                if (standupStarted && isStandup)
                 {
-                    if (stateInfo.normalizedTime >= 0.99f)
+                    if (!stateInfo.loop && stateInfo.normalizedTime >= 0.99f)
                     {
                         if (_debugLogAnimations)
                         {
@@ -1062,7 +1463,7 @@ namespace PoseRuntime
                         break;
                     }
                 }
-                else if (standupStarted && !stateInfo.IsName(_animStandupStateName))
+                else if (standupStarted && !isStandup)
                 {
                     if (_debugLogAnimations)
                     {
@@ -1085,7 +1486,7 @@ namespace PoseRuntime
 
             if (targetSeat != null)
             {
-                StartCoroutine(MoveToSeatWithCompletion(targetSeat, targetPosition, targetRotation, duration));
+                StartCoroutine(MoveToSeatWithCompletion(targetSeat, targetPosition, targetRotation, duration, arrivalTrigger));
             }
             else
             {
@@ -1093,13 +1494,23 @@ namespace PoseRuntime
             }
         }
 
-        private IEnumerator MoveToSeatWithCompletion(ShadowSeat seat, Vector3 targetPosition, Quaternion targetRotation, float duration)
+        private IEnumerator MoveToSeatWithCompletion(ShadowSeat seat, Vector3 targetPosition, Quaternion targetRotation, float duration, string arrivalTrigger = null)
         {
+            if (_debugLogAnimations)
+            {
+                Debug.Log($"[ShadowSeatDirector] MoveToSeatWithCompletion start: seat={seat?._id ?? "null"}, trigger={(string.IsNullOrEmpty(arrivalTrigger) ? "(empty)" : arrivalTrigger)}");
+            }
+
             BeginMovement(targetPosition, targetRotation, duration);
 
             while (_isMoving)
             {
                 yield return null;
+            }
+
+            if (_debugLogAnimations)
+            {
+                Debug.Log("[ShadowSeatDirector] MoveToSeatWithCompletion: movement finished, finalizing position/trigger");
             }
 
             yield return null;
@@ -1108,11 +1519,12 @@ namespace PoseRuntime
             if (seat != null)
             {
                 var root = ShadowRoot;
-                var correctedPosition = seat.AnchorPosition + Vector3.up * seat._heightOffset;
+                var correctedPosition = seat.AnchorPosition + Vector3.up * (seat._heightOffset + _globalHeightOffset);
                 var correctedRotation = seat.ResolveRotation(root, _flipRotation);
 
-                root.position = correctedPosition;
                 root.rotation = correctedRotation;
+                correctedPosition = ApplyFeetHeightLock(correctedPosition);
+                root.position = ResolveRootPosition(correctedPosition, correctedRotation);
 
                 _currentSeat = seat;
                 if (_animator != null && !string.IsNullOrEmpty(_animSeatIndexParam) && !IsAvatarMode())
@@ -1127,7 +1539,52 @@ namespace PoseRuntime
                     }
                     _animator.SetInteger(_animSeatIndexParam, seat._index);
                 }
+                var triggerToFire = string.IsNullOrEmpty(arrivalTrigger) ? _animSitTrigger : arrivalTrigger;
+                if (_animator != null && !IsAvatarMode() && !string.IsNullOrEmpty(triggerToFire))
+                {
+                    if (_debugLogAnimations)
+                    {
+                        Debug.Log($"[ShadowSeatDirector] 座席到着: トリガー発火 {triggerToFire} (seat={seat._id}, index={seat._index})");
+                    }
+                    TriggerAnimator(triggerToFire);
+                    if (!string.IsNullOrEmpty(_animSitStateName))
+                    {
+                        yield return StartCoroutine(EnsureStateOrCrossFade(_animSitStateName, 0.5f, 0.08f));
+                    }
+                }
+                else if (_debugLogAnimations)
+                {
+                    var reason = IsAvatarMode()
+                        ? "AvatarModeでスキップ"
+                        : (_animator == null ? "Animator未設定" : "arrivalTriggerが空");
+                    Debug.Log($"[ShadowSeatDirector] 座席到着: トリガー未発火 ({reason}, seat={seat._id}, index={seat._index})");
+                }
             }
+        }
+
+        private IEnumerator EnsureStateOrCrossFade(string stateName, float timeoutSeconds, float crossFadeSeconds)
+        {
+            if (_animator == null || IsAvatarMode() || string.IsNullOrEmpty(stateName))
+            {
+                yield break;
+            }
+
+            yield return null;
+            yield return null;
+
+            var elapsed = 0f;
+            while (elapsed < timeoutSeconds)
+            {
+                var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
+                if (stateInfo.IsName(stateName))
+                {
+                    yield break;
+                }
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            _animator.CrossFadeInFixedTime(stateName, Mathf.Max(0f, crossFadeSeconds), 0);
         }
 
         private void HandleOtherSeatOccupancy(ShadowSeat humanSeat)
@@ -1224,14 +1681,19 @@ namespace PoseRuntime
         {
             if (targetSeat != null)
             {
-                var targetPosition = targetSeat.AnchorPosition + Vector3.up * targetSeat._heightOffset;
+                var targetPosition = targetSeat.AnchorPosition + Vector3.up * (targetSeat._heightOffset + _globalHeightOffset);
                 var targetRotation = targetSeat.ResolveRotation(ShadowRoot, _flipRotation);
-                yield return StartCoroutine(WaitForStandupAnimationThenMove(targetPosition, targetRotation, _movementDuration, targetSeat));
+                targetPosition = ApplyFeetHeightLock(targetPosition);
+                targetPosition = ResolveRootPosition(targetPosition, targetRotation);
+                yield return StartCoroutine(WaitForStandupAnimationThenMove(targetPosition, targetRotation, _movementDuration, targetSeat, _animSitTrigger));
             }
             else
             {
                 var targetRotation = ResolveFloorRotation();
-                yield return StartCoroutine(WaitForStandupAnimationThenMove(_floorAnchor.position, targetRotation, _movementDuration, null));
+                var targetPosition = _floorAnchor.position + Vector3.up * _globalHeightOffset;
+                targetPosition = ApplyFeetHeightLock(targetPosition);
+                targetPosition = ResolveRootPosition(targetPosition, targetRotation);
+                yield return StartCoroutine(WaitForStandupAnimationThenMove(targetPosition, targetRotation, _movementDuration, null, null));
             }
         }
 
@@ -1248,7 +1710,7 @@ namespace PoseRuntime
             while (elapsedTime < maxWaitTime)
             {
                 var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
-                
+
                 if (!animationStarted && stateInfo.IsName(stateName))
                 {
                     animationStarted = true;

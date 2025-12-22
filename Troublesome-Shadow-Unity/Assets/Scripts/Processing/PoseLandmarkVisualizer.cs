@@ -183,7 +183,7 @@ namespace PoseRuntime
                     continue;
                 }
 
-                var worldPos = ConvertToWorld(joint._position);
+                var worldPos = PoseSpaceUtility.ToWorld(_poseSpaceOrigin, joint._position);
                 _positionCache[joint._name] = worldPos;
                 Gizmos.DrawSphere(worldPos, _jointSize);
             }
@@ -207,16 +207,6 @@ namespace PoseRuntime
                 }
             }
             DrawEditorOverlays(sample);
-        }
-
-        private Vector3 ConvertToWorld(Vector3 position)
-        {
-            if (_poseSpaceOrigin != null)
-            {
-                return _poseSpaceOrigin.TransformPoint(position);
-            }
-
-            return position;
         }
 
 #if UNITY_EDITOR

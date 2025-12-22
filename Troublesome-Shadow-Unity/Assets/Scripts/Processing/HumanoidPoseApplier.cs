@@ -625,11 +625,7 @@ namespace PoseRuntime
 
         private Vector3 ConvertToWorld(Vector3 posePosition)
         {
-            if (_poseSpaceOrigin != null)
-            {
-                return _poseSpaceOrigin.TransformPoint(posePosition);
-            }
-            return posePosition;
+            return PoseSpaceUtility.ToWorld(_poseSpaceOrigin, posePosition);
         }
 
         private bool TryApplyAdvancedHeadOrientation(HumanoidBoneMapping mapping, Transform boneTransform)

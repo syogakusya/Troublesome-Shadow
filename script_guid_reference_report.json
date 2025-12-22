@@ -1,0 +1,114 @@
+{
+  "root": "/Users/tsuchida/Troublesome-Shadow/Troublesome-Shadow-Unity",
+  "scripts": [
+    {
+      "script": "Assets/Scripts/AnimationClipRecording/Editor/HumanoidAnimationClipRecorderEditor.cs",
+      "guid": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9",
+      "ref_count": 0,
+      "refs": []
+    },
+    {
+      "script": "Assets/Scripts/AnimationClipRecording/Playback/HumanoidAnimationClipPlayer.cs",
+      "guid": "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7",
+      "ref_count": 2,
+      "refs": [
+        "Assets/Kevin Iglesias/Human Character Dummy/Prefabs/HumanDummy_M White.prefab",
+        "Assets/vtuber.unity"
+      ]
+    },
+    {
+      "script": "Assets/Scripts/AnimationClipRecording/Recording/HumanoidAnimationClipRecorder.cs",
+      "guid": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+      "ref_count": 2,
+      "refs": [
+        "Assets/Kevin Iglesias/Human Character Dummy/Prefabs/HumanDummy_M White.prefab",
+        "Assets/vtuber.unity"
+      ]
+    },
+    {
+      "script": "Assets/Scripts/AnimationClipRecording/Utils/AnimationClipConverter.cs",
+      "guid": "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
+      "ref_count": 0,
+      "refs": []
+    },
+    {
+      "script": "Assets/Scripts/Data/SkeletonData.cs",
+      "guid": "d600d85caf189314b8c891df270bfcf9",
+      "ref_count": 0,
+      "refs": []
+    },
+    {
+      "script": "Assets/Scripts/Networking/PoseReceiver.cs",
+      "guid": "5c3bbab95dea10a48b6eeb82743910cb",
+      "ref_count": 1,
+      "refs": [
+        "Assets/Kevin Iglesias/Human Character Dummy/Prefabs/HumanDummy_M White.prefab"
+      ]
+    },
+    {
+      "script": "Assets/Scripts/Processing/AvatarController.cs",
+      "guid": "cb69b94466251fc479c0f05a645ec84e",
+      "ref_count": 1,
+      "refs": [
+        "Assets/Kevin Iglesias/Human Character Dummy/Prefabs/HumanDummy_M White.prefab"
+      ]
+    },
+    {
+      "script": "Assets/Scripts/Processing/HumanoidPoseApplier.cs",
+      "guid": "08b0006e6e34d4569888b062b254f6f1",
+      "ref_count": 1,
+      "refs": [
+        "Assets/Kevin Iglesias/Human Character Dummy/Prefabs/HumanDummy_M White.prefab"
+      ]
+    },
+    {
+      "script": "Assets/Scripts/Processing/InteractionModeCoordinator.cs",
+      "guid": "e86144d1f2944fbea5236a0669142631",
+      "ref_count": 2,
+      "refs": [
+        "Assets/Kevin Iglesias/Human Character Dummy/Prefabs/HumanDummy_M White.prefab",
+        "Assets/main.unity"
+      ]
+    },
+    {
+      "script": "Assets/Scripts/Processing/PoseLandmarkVisualizer.cs",
+      "guid": "26f4317ad2674162bfe23b4df592ec86",
+      "ref_count": 1,
+      "refs": [
+        "Assets/Kevin Iglesias/Human Character Dummy/Prefabs/HumanDummy_M White.prefab"
+      ]
+    },
+    {
+      "script": "Assets/Scripts/Processing/SeatingMetadata.cs",
+      "guid": "0d126a195df04dafa6c7faf15fb6ad49",
+      "ref_count": 0,
+      "refs": []
+    },
+    {
+      "script": "Assets/Scripts/Processing/ShadowSeatDirector.cs",
+      "guid": "0d196f85e1d84c8db28f967b789dd4c6",
+      "ref_count": 2,
+      "refs": [
+        "Assets/Kevin Iglesias/Human Character Dummy/Prefabs/HumanDummy_M White.prefab",
+        "Assets/main.unity"
+      ]
+    },
+    {
+      "script": "Assets/Scripts/Processing/ShadowTouchResponder.cs",
+      "guid": "3aea0c7e1cae4253970f341942d41274",
+      "ref_count": 1,
+      "refs": [
+        "Assets/Kevin Iglesias/Human Character Dummy/Prefabs/HumanDummy_M White.prefab"
+      ]
+    },
+    {
+      "script": "Assets/Scripts/Processing/SkeletonNormalizer.cs",
+      "guid": "a06bd6cde9fdcba4097684da15107426",
+      "ref_count": 1,
+      "refs": [
+        "Assets/SkeletonNormalizer.asset"
+      ]
+    }
+  ],
+  "ref_files_scanned": 48
+}

@@ -134,7 +134,7 @@ namespace PoseRuntime
                 return false;
             }
 
-            var jointWorld = ConvertToWorld(joint._position);
+            var jointWorld = PoseSpaceUtility.ToWorld(_poseSpaceOrigin, joint._position);
             var distance = Vector3.Distance(rootPosition, jointWorld);
 
             if (_drawDebug)
@@ -143,16 +143,6 @@ namespace PoseRuntime
             }
 
             return distance <= _touchRadius;
-        }
-
-        private Vector3 ConvertToWorld(Vector3 posePosition)
-        {
-            if (_poseSpaceOrigin != null)
-            {
-                return _poseSpaceOrigin.TransformPoint(posePosition);
-            }
-
-            return posePosition;
         }
 
 #if UNITY_EDITOR
