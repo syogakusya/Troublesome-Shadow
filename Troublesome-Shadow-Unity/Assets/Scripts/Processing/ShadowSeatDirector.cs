@@ -110,6 +110,7 @@ namespace PoseRuntime
         public string _animSeatIndexParam = "SeatIndex";
         public string _animOnFloorParam = "OnFloor";
         public string _animWalkSpeedParam = "WalkSpeed";
+        public string _animWalkStateName = "Walk";
         public string _animSurprisedTrigger = "Surprised";
         public string _animFrustratedTrigger = "Frustrated";
         public string _animScareTrigger = "Scare";
@@ -118,6 +119,11 @@ namespace PoseRuntime
         public string _animStandupTrigger = "Standup";
         public string _animStandupStateName = "standup";
         public string _animSitStateName = "Sit";
+
+        [Header("Animator Tweaks")]
+        public bool _disableRootMotion = true;
+        public bool _disableStabilizeFeet = true;
+        public bool _forceWalkStateOnMove = true;
 
         [Header("Debug")]
         public bool _debugLogSeating = false;
@@ -181,6 +187,7 @@ namespace PoseRuntime
             BuildSeatLookup();
             InitializeDebugOccupancy();
             ApplyStartupState();
+            ApplyAnimatorTweaks();
         }
 
         private void InitializeDebugOccupancy()
@@ -201,6 +208,8 @@ namespace PoseRuntime
             {
                 _avatarController.SampleProcessed += OnSampleProcessed;
             }
+
+            ApplyAnimatorTweaks();
         }
 
         private void OnDisable()
@@ -844,6 +853,24 @@ namespace PoseRuntime
             _lookAtIK.SetTarget(_activeLookTarget.position);
         }
 
+        private void ApplyAnimatorTweaks()
+        {
+            if (_animator == null || IsAvatarMode())
+            {
+                return;
+            }
+
+            if (_disableRootMotion)
+            {
+                _animator.applyRootMotion = false;
+            }
+
+            if (_disableStabilizeFeet)
+            {
+                _animator.stabilizeFeet = false;
+            }
+        }
+
         private void MoveShadowToSeat(ShadowSeat seat, string trigger, bool force)
         {
             var arrivalTrigger = string.IsNullOrEmpty(trigger) ? _animSitTrigger : trigger;
@@ -1069,6 +1096,10 @@ namespace PoseRuntime
                     Debug.Log($"[ShadowSeatDirector] アニメーションパラメータ変更: {_animWalkSpeedParam} = {_walkSpeed} (歩行開始)");
                 }
                 _animator.SetFloat(_animWalkSpeedParam, _walkSpeed);
+                if (_forceWalkStateOnMove && !string.IsNullOrEmpty(_animWalkStateName))
+                {
+                    _animator.CrossFadeInFixedTime(_animWalkStateName, 0.08f, 0);
+                }
             }
 
             var startPosition = root.position;
@@ -1194,6 +1225,10 @@ namespace PoseRuntime
                     Debug.Log($"[ShadowSeatDirector] アニメーションパラメータ変更: {_animWalkSpeedParam} = {_walkSpeed} (歩行開始)");
                 }
                 _animator.SetFloat(_animWalkSpeedParam, _walkSpeed);
+                if (_forceWalkStateOnMove && !string.IsNullOrEmpty(_animWalkStateName))
+                {
+                    _animator.CrossFadeInFixedTime(_animWalkStateName, 0.08f, 0);
+                }
             }
 
             var startPos = root.position;
