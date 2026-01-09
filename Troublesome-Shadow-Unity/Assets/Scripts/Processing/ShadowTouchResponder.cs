@@ -4,8 +4,7 @@ using UnityEngine.Serialization;
 namespace PoseRuntime
 {
     /// <summary>
-    /// Emits an animator trigger when MediaPipe hand joints approach the projected shadow avatar.
-    /// Useful for playing "poked" or "surprised" reactions when visitors wave into the projection.
+    /// Detects sustained hand contact near the projected shadow avatar and notifies ShadowSeatDirector.
     /// </summary>
     [DefaultExecutionOrder(400)]
     public class ShadowTouchResponder : MonoBehaviour
@@ -13,12 +12,13 @@ namespace PoseRuntime
         [FormerlySerializedAs("controller")] public AvatarController _controller;
         [FormerlySerializedAs("shadowRoot")] public Transform _shadowRoot;
         [FormerlySerializedAs("poseSpaceOrigin")] public Transform _poseSpaceOrigin;
-        [FormerlySerializedAs("animator")] public Animator _animator;
+        public ShadowSeatDirector _seatDirector;
         [FormerlySerializedAs("leftHandJoint")] public string _leftHandJoint = "LEFT_INDEX";
         [FormerlySerializedAs("rightHandJoint")] public string _rightHandJoint = "RIGHT_INDEX";
-        [FormerlySerializedAs("touchTrigger")] public string _touchTrigger = "Touched";
         [FormerlySerializedAs("touchRadius")] public float _touchRadius = 0.35f;
+        public float _touchHoldSeconds = 0.6f;
         [FormerlySerializedAs("cooldownSeconds")] public float _cooldownSeconds = 1.0f;
+        public bool _requireSeatedIdle = true;
         [FormerlySerializedAs("minimumConfidence")] public float _minimumConfidence = 0.2f;
         [FormerlySerializedAs("debugLogging")] public bool _debugLogging = false;
         [FormerlySerializedAs("drawDebug")] public bool _drawDebug = false;
@@ -27,6 +27,13 @@ namespace PoseRuntime
         private SkeletonSample _latestSample;
         private float _lastTriggerTime = -999f;
         private bool _subscribed;
+        private bool _isTouching;
+        private float _touchStartTime = -1f;
+        private bool _touchTriggered;
+        private Vector3 _lastTouchWorldPosition;
+
+        public bool IsTouching => _isTouching;
+        public Vector3 LastTouchWorldPosition => _lastTouchWorldPosition;
 
         private void Reset()
         {
@@ -55,9 +62,9 @@ namespace PoseRuntime
                 _controller = GetComponent<AvatarController>();
             }
 
-            if (_animator == null)
+            if (_seatDirector == null)
             {
-                _animator = GetComponentInChildren<Animator>();
+                _seatDirector = GetComponent<ShadowSeatDirector>();
             }
         }
 
@@ -87,12 +94,63 @@ namespace PoseRuntime
 
         private void EvaluateTouch()
         {
-            if (_animator == null || string.IsNullOrEmpty(_touchTrigger))
+            if (_latestSample == null)
             {
                 return;
             }
 
-            if (_latestSample == null)
+            var root = _shadowRoot != null ? _shadowRoot : transform;
+            var rootPosition = root.position;
+            var touching = false;
+            var touchPosition = Vector3.zero;
+
+            if (IsJointWithinRadius(_leftHandJoint, rootPosition, out var leftPosition))
+            {
+                touching = true;
+                touchPosition = leftPosition;
+            }
+            else if (IsJointWithinRadius(_rightHandJoint, rootPosition, out var rightPosition))
+            {
+                touching = true;
+                touchPosition = rightPosition;
+            }
+
+            var allowTrigger = !_requireSeatedIdle || _seatDirector == null || _seatDirector.CanReceiveTouch;
+            UpdateTouchState(touching, touchPosition, allowTrigger);
+        }
+
+        private void UpdateTouchState(bool touching, Vector3 touchPosition, bool allowTrigger)
+        {
+            _isTouching = touching;
+
+            if (!touching)
+            {
+                ResetTouchState();
+                return;
+            }
+
+            _lastTouchWorldPosition = touchPosition;
+
+            if (!allowTrigger)
+            {
+                if (!_touchTriggered)
+                {
+                    _touchStartTime = -1f;
+                }
+                return;
+            }
+
+            if (_touchStartTime < 0f)
+            {
+                _touchStartTime = Time.time;
+            }
+
+            if (_touchTriggered)
+            {
+                return;
+            }
+
+            if (Time.time - _touchStartTime < _touchHoldSeconds)
             {
                 return;
             }
@@ -102,23 +160,30 @@ namespace PoseRuntime
                 return;
             }
 
-            var root = _shadowRoot != null ? _shadowRoot : transform;
-            var rootPosition = root.position;
+            _lastTriggerTime = Time.time;
+            _touchTriggered = true;
 
-            if (IsJointWithinRadius(_leftHandJoint, rootPosition) || IsJointWithinRadius(_rightHandJoint, rootPosition))
+            if (_seatDirector != null)
             {
-                _lastTriggerTime = Time.time;
-                _animator.ResetTrigger(_touchTrigger);
-                _animator.SetTrigger(_touchTrigger);
-                if (_debugLogging)
-                {
-                    Debug.Log("ShadowTouchResponder: touch detected");
-                }
+                _seatDirector.NotifySustainedTouch();
+            }
+
+            if (_debugLogging)
+            {
+                Debug.Log("ShadowTouchResponder: sustained touch detected");
             }
         }
 
-        private bool IsJointWithinRadius(string jointName, Vector3 rootPosition)
+        private void ResetTouchState()
         {
+            _touchStartTime = -1f;
+            _touchTriggered = false;
+            _isTouching = false;
+        }
+
+        private bool IsJointWithinRadius(string jointName, Vector3 rootPosition, out Vector3 jointWorld)
+        {
+            jointWorld = Vector3.zero;
             if (string.IsNullOrEmpty(jointName))
             {
                 return false;
@@ -134,7 +199,7 @@ namespace PoseRuntime
                 return false;
             }
 
-            var jointWorld = PoseSpaceUtility.ToWorld(_poseSpaceOrigin, joint._position);
+            jointWorld = PoseSpaceUtility.ToWorld(_poseSpaceOrigin, joint._position);
             var distance = Vector3.Distance(rootPosition, jointWorld);
 
             if (_drawDebug)
