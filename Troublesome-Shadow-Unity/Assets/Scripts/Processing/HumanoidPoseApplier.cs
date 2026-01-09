@@ -68,11 +68,13 @@ namespace PoseRuntime
         private readonly Dictionary<string, JointSample> _jointLookup = new Dictionary<string, JointSample>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Vector3> _lastKnownJointPositions = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Vector3> _restJointPositions = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
+        private static readonly string[] NeckJoints = { "LEFT_SHOULDER", "RIGHT_SHOULDER" };
+        private static readonly string[] ChestJoints = { "LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP" };
+        private static readonly string[] PelvisJoints = { "LEFT_HIP", "RIGHT_HIP" };
         private bool _hasSample;
         private readonly HashSet<string> _missingJointWarnings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<HumanBodyBones> _missingBoneWarnings = new HashSet<HumanBodyBones>();
         private int _debugFrameCounter;
-        private Quaternion _rootRestRotation = Quaternion.identity;
         private Vector3 _rootRestForward = Vector3.forward;
         private Vector3 _rootRestUp = Vector3.up;
         private Vector3 _rootRestRight = Vector3.right;
@@ -108,7 +110,6 @@ namespace PoseRuntime
 
             if (_animator != null)
             {
-                _rootRestRotation = _animator.transform.rotation;
                 _rootRestForward = _animator.transform.forward;
                 _rootRestUp = _animator.transform.up;
                 _rootRestRight = _animator.transform.right;
@@ -325,14 +326,14 @@ namespace PoseRuntime
             switch (jointName.ToUpperInvariant())
             {
                 case "NECK":
-                    if (TryAverage(new[] { "LEFT_SHOULDER", "RIGHT_SHOULDER" }, out position))
+                    if (TryAverage(NeckJoints, out position))
                     {
                         _lastKnownJointPositions[jointName] = position;
                         return true;
                     }
                     break;
                 case "CHEST":
-                    if (TryAverage(new[] { "LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP" }, out position))
+                    if (TryAverage(ChestJoints, out position))
                     {
                         _lastKnownJointPositions[jointName] = position;
                         return true;
@@ -340,7 +341,7 @@ namespace PoseRuntime
                     break;
                 case "PELVIS":
                 case "HIP_CENTER":
-                    if (TryAverage(new[] { "LEFT_HIP", "RIGHT_HIP" }, out position))
+                    if (TryAverage(PelvisJoints, out position))
                     {
                         _lastKnownJointPositions[jointName] = position;
                         return true;
@@ -992,22 +993,7 @@ namespace PoseRuntime
                 }
                 else
                 {
-                    Vector3 basePosition;
-                    if (_trackRootMovement && _initialPelvisPositionCaptured)
-                    {
-                        var movementDelta = pelvisWorld - _initialPelvisPosition;
-                        var scaledMovement = Vector3.Scale(movementDelta * _rootMovementScale, _rootMovementAxisScale);
-                        basePosition = _initialRootPosition + scaledMovement;
-                        if (_debugLogging && Time.frameCount % 30 == 0)
-                        {
-                            Debug.Log($"HumanoidPoseApplier: movementDelta={movementDelta}, scaledMovement={scaledMovement}, basePosition={basePosition}");
-                        }
-                    }
-                    else
-                    {
-                        basePosition = pelvisWorld;
-                    }
-                    
+                    var basePosition = ComputeBaseRootPosition(pelvisWorld);
                     targetPosition = new Vector3(
                         metadataPosition.x * blend.x + basePosition.x * (1f - blend.x),
                         metadataPosition.y * blend.y + basePosition.y * (1f - blend.y),
@@ -1016,22 +1002,7 @@ namespace PoseRuntime
             }
             else
             {
-                Vector3 basePosition;
-                if (_trackRootMovement && _initialPelvisPositionCaptured)
-                {
-                    var movementDelta = pelvisWorld - _initialPelvisPosition;
-                    var scaledMovement = Vector3.Scale(movementDelta * _rootMovementScale, _rootMovementAxisScale);
-                    basePosition = _initialRootPosition + scaledMovement;
-                    if (_debugLogging && Time.frameCount % 30 == 0)
-                    {
-                        Debug.Log($"HumanoidPoseApplier: movementDelta={movementDelta}, scaledMovement={scaledMovement}, basePosition={basePosition}");
-                    }
-                }
-                else
-                {
-                    basePosition = pelvisWorld;
-                }
-                targetPosition = basePosition;
+                targetPosition = ComputeBaseRootPosition(pelvisWorld);
             }
             targetPosition += _rootPositionOffset;
             var targetRotation = Quaternion.LookRotation(forward, up) * Quaternion.Euler(_rootRotationOffset);
@@ -1043,6 +1014,23 @@ namespace PoseRuntime
             {
                 Debug.Log($"HumanoidPoseApplier root target -> pos {targetPosition}, rot {targetRotation.eulerAngles}");
             }
+        }
+
+        private Vector3 ComputeBaseRootPosition(Vector3 pelvisWorld)
+        {
+            if (_trackRootMovement && _initialPelvisPositionCaptured)
+            {
+                var movementDelta = pelvisWorld - _initialPelvisPosition;
+                var scaledMovement = Vector3.Scale(movementDelta * _rootMovementScale, _rootMovementAxisScale);
+                var basePosition = _initialRootPosition + scaledMovement;
+                if (_debugLogging && Time.frameCount % 30 == 0)
+                {
+                    Debug.Log($"HumanoidPoseApplier: movementDelta={movementDelta}, scaledMovement={scaledMovement}, basePosition={basePosition}");
+                }
+                return basePosition;
+            }
+
+            return pelvisWorld;
         }
 
         private void PopulateDefaultMappings()

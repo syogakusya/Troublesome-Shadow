@@ -258,6 +258,10 @@ namespace PoseRuntime
             if (_animator != null && !IsAvatarMode())
             {
                 var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
+                if (_animator.IsInTransition(0))
+                {
+                    return;
+                }
                 var isSit = !string.IsNullOrEmpty(_animSitStateName) && stateInfo.IsName(_animSitStateName);
                 var isStandup = !string.IsNullOrEmpty(_animStandupStateName) && stateInfo.IsName(_animStandupStateName);
                 var isIdle = stateInfo.IsName("Idle");
@@ -1234,6 +1238,11 @@ namespace PoseRuntime
                 {
                     Debug.Log($"[ShadowSeatDirector] standupアニメーション待機タイムアウト。移動を開始します。");
                 }
+            }
+
+            if (_animator != null && !string.IsNullOrEmpty(_animStandupTrigger))
+            {
+                _animator.ResetTrigger(_animStandupTrigger);
             }
 
             if (targetSeat != null)

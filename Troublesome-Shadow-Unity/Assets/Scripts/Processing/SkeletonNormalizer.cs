@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -21,7 +22,7 @@ namespace PoseRuntime
         [FormerlySerializedAs("invertZAxis")] public bool _invertZAxis = true;
         [FormerlySerializedAs("perJointOverrides")] public List<AxisRemap> _perJointOverrides = new List<AxisRemap>();
 
-        private readonly Dictionary<string, AxisRemap> _overrideLookup = new Dictionary<string, AxisRemap>();
+        private readonly Dictionary<string, AxisRemap> _overrideLookup = new Dictionary<string, AxisRemap>(StringComparer.OrdinalIgnoreCase);
 
         private void OnEnable()
         {
@@ -35,7 +36,7 @@ namespace PoseRuntime
             {
                 if (!string.IsNullOrEmpty(remap._jointName))
                 {
-                    _overrideLookup[remap._jointName.ToLowerInvariant()] = remap;
+                    _overrideLookup[remap._jointName] = remap;
                 }
             }
         }
@@ -49,8 +50,13 @@ namespace PoseRuntime
 
             foreach (var joint in sample._joints)
             {
+                if (joint == null || string.IsNullOrEmpty(joint._name))
+                {
+                    continue;
+                }
+
                 var normalized = ApplyGlobal(joint._position);
-                if (_overrideLookup.TryGetValue(joint._name.ToLowerInvariant(), out var remap))
+                if (_overrideLookup.TryGetValue(joint._name, out var remap))
                 {
                     normalized = Vector3.Scale(normalized, remap._positionScale) + remap._positionOffset;
                     joint._rotation *= Quaternion.Euler(remap._rotationOffset);
