@@ -225,7 +225,7 @@ Transform:
   m_GameObject: {fileID: 17554836}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: -0}
+  m_LocalPosition: {x: 0, y: 0.1, z: -0}
   m_LocalScale: {x: 2, y: 2, z: 2}
   m_ConstrainProportionsScale: 1
   m_Children: []
@@ -755,7 +755,7 @@ Transform:
   m_GameObject: {fileID: 1820743654}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 1.15, y: 0, z: 6.53}
+  m_LocalPosition: {x: 1.15, y: 0, z: 2.67}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -923,6 +923,10 @@ PrefabInstance:
       propertyPath: _poseSpaceOrigin
       value: 
       objectReference: {fileID: 813278940}
+    - target: {fileID: 5873642297557900649, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
+      propertyPath: _shadowSeatDirector
+      value: 
+      objectReference: {fileID: 2045646444968919075}
     - target: {fileID: 5900990347340633780, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
       propertyPath: m_Enabled
       value: 0
@@ -953,7 +957,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
       propertyPath: _walkSpeed
-      value: 1
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
       propertyPath: _entryAnchor
@@ -963,6 +967,10 @@ PrefabInstance:
       propertyPath: _floorAnchor
       value: 
       objectReference: {fileID: 1820743655}
+    - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
+      propertyPath: _lookDuration
+      value: 5
+      objectReference: {fileID: 0}
     - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
       propertyPath: _startInactive
       value: 1
@@ -980,8 +988,20 @@ PrefabInstance:
       value: 0.01
       objectReference: {fileID: 0}
     - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
+      propertyPath: _movementDuration
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
       propertyPath: _stoppingDistance
       value: 0.01
+      objectReference: {fileID: 0}
+    - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
+      propertyPath: _disableRootMotion
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
+      propertyPath: _walkRotationSpeed
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
       propertyPath: _enableDebugSeating
@@ -990,6 +1010,18 @@ PrefabInstance:
     - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
       propertyPath: _globalHeightOffset
       value: 0.2
+      objectReference: {fileID: 0}
+    - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
+      propertyPath: _disableStabilizeFeet
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
+      propertyPath: _forceWalkStateOnMove
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
+      propertyPath: _postMoveLookDuration
+      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 8414097381516692893, guid: 68a35b25c4e9d43e8820f805e07922db, type: 3}
       propertyPath: _seats.Array.data[0]._anchor
