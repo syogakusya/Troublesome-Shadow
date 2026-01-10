@@ -2367,12 +2367,18 @@ PrefabInstance:
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
       insertIndex: 1
-      addedObject: {fileID: 7184253721179609831}
+      addedObject: {fileID: 8414097381516692893}
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
       insertIndex: 2
-      addedObject: {fileID: 6655114385102785320}
+      addedObject: {fileID: 4144754807788095963}
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
       insertIndex: 3
+      addedObject: {fileID: 7184253721179609831}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
+      insertIndex: 4
+      addedObject: {fileID: 6655114385102785320}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
+      insertIndex: 5
       addedObject: {fileID: 2354729934130986998}
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
       insertIndex: -1
@@ -2383,9 +2389,6 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
       insertIndex: -1
       addedObject: {fileID: 5873642297557900649}
-    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 8414097381516692893}
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
       insertIndex: -1
       addedObject: {fileID: 5900990347340633780}
@@ -2408,6 +2411,94 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
   m_PrefabInstance: {fileID: 4709872556320753760}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &8414097381516692893
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5592835164524852529}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0d196f85e1d84c8db28f967b789dd4c6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoseRuntime.ShadowSeatDirector
+  _shadowRoot: {fileID: 5104387485385977739}
+  _avatarController: {fileID: 300736689236657552}
+  _animator: {fileID: 1168193219328783857}
+  _modeCoordinator: {fileID: 7184253721179609831}
+  _lookAtIK: {fileID: 4144754807788095963}
+  _touchResponder: {fileID: 5900990347340633780}
+  _startInactive: 1
+  _autoStart: 1
+  _entryAnchor: {fileID: 0}
+  _seats:
+  - _id: seat-01
+    _anchor: {fileID: 0}
+    _lookTarget: {fileID: 0}
+    _heightOffset: 0
+  - _id: seat-02
+    _anchor: {fileID: 0}
+    _lookTarget: {fileID: 0}
+    _heightOffset: 0
+  - _id: seat-03
+    _anchor: {fileID: 0}
+    _lookTarget: {fileID: 0}
+    _heightOffset: 0
+  _defaultSeatId: seat-02
+  _floorAnchor: {fileID: 0}
+  _floorLookTarget: {fileID: 0}
+  _globalHeightOffset: 0.2
+  _seatPostSitOffset: 1
+  _movementDuration: 10
+  _lookDuration: 5
+  _postMoveLookDuration: 5
+  _sameSeatCollisionThreshold: 3
+  _useWalkingAnimation: 1
+  _walkSpeed: 2
+  _walkRotationSpeed: 4
+  _stoppingDistance: 0.01
+  _minWalkDistance: 0.01
+  _flipRotation: 0
+  _animSeatIndexParam: SeatIndex
+  _animOnFloorParam: OnFloor
+  _animWalkSpeedParam: WalkSpeed
+  _animWalkStateName: Walk
+  _animSurprisedTrigger: Surprised
+  _animFrustratedTrigger: Frustrated
+  _animScareTrigger: Scare
+  _animSitTrigger: Sit
+  _animSitOnFloorTrigger: SitOnFloor
+  _animStandupTrigger: Standup
+  _animStandupStateName: standup
+  _animSitStateName: Sit
+  _disableRootMotion: 0
+  _disableStabilizeFeet: 1
+  _forceWalkStateOnMove: 1
+  _debugLogSeating: 1
+  _debugLogAnimations: 1
+  _debugLogInterval: 1
+  _enableDebugSeating: 0
+  _debugToggleKey: 32
+--- !u!114 &4144754807788095963
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5592835164524852529}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8a27f3d28b30e43588e7713d1df9984f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PoseRuntime.ShadowLookAtIK
+  _animator: {fileID: 1168193219328783857}
+  _maxWeight: 1
+  _bodyWeight: 0.1
+  _headWeight: 0.6
+  _eyesWeight: 1
+  _clampWeight: 0.7
+  _smoothTime: 0.12
 --- !u!114 &7184253721179609831
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2563,67 +2654,8 @@ MonoBehaviour:
   _autoPopulate: 1
   _debugLogging: 0
   _animationClipPlayer: {fileID: 2354729934130986998}
-  _shadowSeatDirector: {fileID: 0}
+  _shadowSeatDirector: {fileID: 8414097381516692893}
   _boneMappings: []
---- !u!114 &8414097381516692893
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5592835164524852529}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0d196f85e1d84c8db28f967b789dd4c6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PoseRuntime.ShadowSeatDirector
-  _shadowRoot: {fileID: 5104387485385977739}
-  _avatarController: {fileID: 300736689236657552}
-  _animator: {fileID: 1168193219328783857}
-  _modeCoordinator: {fileID: 7184253721179609831}
-  _seats:
-  - _id: seat-01
-    _anchor: {fileID: 0}
-    _lookTarget: {fileID: 0}
-    _heightOffset: 0
-  - _id: seat-02
-    _anchor: {fileID: 0}
-    _lookTarget: {fileID: 0}
-    _heightOffset: 0
-  - _id: seat-03
-    _anchor: {fileID: 0}
-    _lookTarget: {fileID: 0}
-    _heightOffset: 0
-  _defaultSeatId: seat-02
-  _floorAnchor: {fileID: 0}
-  _floorLookTarget: {fileID: 0}
-  _globalHeightOffset: 0
-  _movementDuration: 0.75
-  _lookDuration: 0.35
-  _glareCooldown: 2
-  _glareConfidenceThreshold: 0.2
-  _useWalkingAnimation: 1
-  _walkSpeed: 0.5
-  _walkRotationSpeed: 5
-  _stoppingDistance: 0.05
-  _minWalkDistance: 0.05
-  _flipRotation: 0
-  _animSeatIndexParam: SeatIndex
-  _animOnFloorParam: OnFloor
-  _animWalkSpeedParam: WalkSpeed
-  _animSurprisedTrigger: Surprised
-  _animGlareTrigger: Glare
-  _animFrustratedTrigger: Frustrated
-  _animSitTrigger: Sit
-  _animSitOnFloorTrigger: SitOnFloor
-  _animStandupTrigger: Standup
-  _animStandupStateName: standup
-  _animSitStateName: Sit
-  _debugLogSeating: 1
-  _debugLogAnimations: 1
-  _debugLogInterval: 1
-  _enableDebugSeating: 1
-  _debugToggleKey: 32
 --- !u!114 &5900990347340633780
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2639,15 +2671,16 @@ MonoBehaviour:
   _controller: {fileID: 300736689236657552}
   _shadowRoot: {fileID: 5104387485385977739}
   _poseSpaceOrigin: {fileID: 0}
-  _animator: {fileID: 1168193219328783857}
+  _seatDirector: {fileID: 8414097381516692893}
   _leftHandJoint: LEFT_INDEX
   _rightHandJoint: RIGHT_INDEX
-  _touchTrigger: Touched
   _touchRadius: 0.35
+  _touchHoldSeconds: 0.6
   _cooldownSeconds: 1
+  _requireSeatedIdle: 1
   _minimumConfidence: 0.2
-  _debugLogging: 0
-  _drawDebug: 0
+  _debugLogging: 1
+  _drawDebug: 1
   _debugColor: {r: 0, g: 1, b: 1, a: 1}
 --- !u!114 &1670701075638195867
 MonoBehaviour:

@@ -91,6 +91,8 @@ namespace PoseRuntime
         public Transform _floorAnchor;
         public Transform _floorLookTarget;
         public float _globalHeightOffset = 0f;
+        public float _seatSitOffset = 0f;
+        public float _seatPostSitOffset = 0f;
 
         [Header("Timing")]
         public float _movementDuration = 0.75f;
@@ -296,18 +298,12 @@ namespace PoseRuntime
 
         private ShadowSeat PickStartSeat()
         {
-            var candidates = _seats.Where(seat => seat != null && !seat._isHumanOccupied).ToList();
-            if (candidates.Count == 0)
+            if (_defaultSeat != null && !_defaultSeat._isHumanOccupied)
             {
-                candidates = _seats.Where(seat => seat != null).ToList();
+                return _defaultSeat;
             }
 
-            if (candidates.Count == 0)
-            {
-                return null;
-            }
-
-            return candidates[UnityEngine.Random.Range(0, candidates.Count)];
+            return FindBestSeat(reference: null, requireGap: false, allowCurrent: false);
         }
 
         public void StartShadow()
@@ -402,7 +398,7 @@ namespace PoseRuntime
             }
 
             var seat = _currentSeat;
-            var correctedPosition = seat.AnchorPosition + Vector3.up * (seat._heightOffset + _globalHeightOffset);
+            var correctedPosition = GetSeatPosition(seat, _seatPostSitOffset);
             var correctedRotation = seat.ResolveRotation(root, _flipRotation);
             root.position = correctedPosition;
             root.rotation = correctedRotation;
@@ -871,6 +867,29 @@ namespace PoseRuntime
             }
         }
 
+        private Vector3 GetSeatPosition(ShadowSeat seat, float offset)
+        {
+            if (seat == null)
+            {
+                return Vector3.zero;
+            }
+
+            var basePosition = seat.AnchorPosition + Vector3.up * (seat._heightOffset + _globalHeightOffset);
+            if (Mathf.Abs(offset) <= Mathf.Epsilon)
+            {
+                return basePosition;
+            }
+
+            var rotation = seat.ResolveRotation(ShadowRoot, _flipRotation);
+            var forward = rotation * Vector3.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude > 0.0001f)
+            {
+                forward.Normalize();
+            }
+
+            return basePosition - forward * offset;
+        }
         private void MoveShadowToSeat(ShadowSeat seat, string trigger, bool force)
         {
             var arrivalTrigger = string.IsNullOrEmpty(trigger) ? _animSitTrigger : trigger;
@@ -916,7 +935,7 @@ namespace PoseRuntime
                 Debug.Log($"[ShadowSeatDirector] 座席への移動開始: {seat._id} (index={seat._index}), 目標位置 = {seat.AnchorPosition}");
             }
 
-            var targetPosition = seat.AnchorPosition + Vector3.up * (seat._heightOffset + _globalHeightOffset);
+            var targetPosition = GetSeatPosition(seat, _seatSitOffset);
             var targetRotation = seat.ResolveRotation(ShadowRoot, _flipRotation);
             var shouldStandup = !_onFloor && _currentSeat != null && _animator != null && !IsAvatarMode();
 
@@ -1030,7 +1049,7 @@ namespace PoseRuntime
 
             var root = ShadowRoot;
             var rotation = seat.ResolveRotation(root, _flipRotation);
-            var pivotPosition = seat.AnchorPosition + Vector3.up * (seat._heightOffset + _globalHeightOffset);
+            var pivotPosition = GetSeatPosition(seat, _seatPostSitOffset);
             root.rotation = rotation;
             root.position = pivotPosition;
             _currentSeat = seat;
@@ -1512,7 +1531,7 @@ namespace PoseRuntime
             if (seat != null)
             {
                 var root = ShadowRoot;
-                var correctedPosition = seat.AnchorPosition + Vector3.up * (seat._heightOffset + _globalHeightOffset);
+                var correctedPosition = GetSeatPosition(seat, _seatSitOffset);
                 var correctedRotation = seat.ResolveRotation(root, _flipRotation);
 
                 root.rotation = correctedRotation;
@@ -1646,7 +1665,7 @@ namespace PoseRuntime
         {
             if (targetSeat != null)
             {
-                var targetPosition = targetSeat.AnchorPosition + Vector3.up * (targetSeat._heightOffset + _globalHeightOffset);
+                var targetPosition = GetSeatPosition(targetSeat, _seatSitOffset);
                 var targetRotation = targetSeat.ResolveRotation(ShadowRoot, _flipRotation);
                 yield return StartCoroutine(WaitForStandupAnimationThenMove(targetPosition, targetRotation, _movementDuration, targetSeat, _animSitTrigger));
             }
