@@ -2,13 +2,21 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
 try:  # pragma: no cover - optional dependency guarded at runtime
     import cv2  # type: ignore
 except Exception:  # pragma: no cover - allow import without OpenCV for tests
     cv2 = None  # type: ignore
+try:  # pragma: no cover - optional dependency guarded at runtime
+    from PIL import Image, ImageDraw, ImageFont  # type: ignore
+except Exception:  # pragma: no cover - allow import without Pillow for tests
+    Image = None  # type: ignore
+    ImageDraw = None  # type: ignore
+    ImageFont = None  # type: ignore
 
 from .seating import SeatRegion, SeatingLayout
 
@@ -40,6 +48,21 @@ class LiveSeatingEditor:
 
     _HANDLE_RADIUS = 12
     _MIN_EXTENT = 0.02
+    _INFO_FONT_SIZE = 16
+    _INFO_TEXT_LEFT = 10
+    _INFO_TEXT_TOP = 24
+    _INFO_TEXT_STEP = 20
+    _FONT_ENV_VAR = "POSE_CAPTURE_OVERLAY_FONT"
+    _FONT_CANDIDATES = (
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "C:\\Windows\\Fonts\\meiryo.ttc",
+        "C:\\Windows\\Fonts\\msgothic.ttc",
+    )
 
     def __init__(
         self,
@@ -65,6 +88,13 @@ class LiveSeatingEditor:
         self._status_message = "'E'キーで編集モード"
         self._mouse_attached = False
         self._last_mouse_position: Tuple[int, int] = (0, 0)
+        self._pil_font: Optional["ImageFont.FreeTypeFont"] = None
+        self._pil_font_size: Optional[int] = None
+        self._info_overlay = None
+        self._info_overlay_key: Optional[Tuple[Tuple[str, ...], int]] = None
+        self._label_overlay_cache = {}
+        self._numpy = None
+        self._numpy_checked = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -104,7 +134,7 @@ class LiveSeatingEditor:
             x1, y1, x2, y2 = self._seat_pixels(seat)
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             label = f"{seat.seat_id}"
-            cv2.putText(frame, label, (x1 + 4, y1 + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+            self._draw_text(frame, label, (x1 + 4, y1 + 18), color)
             if self._editing_enabled and index == self._selected_index:
                 self._draw_handles(frame, x1, y1, x2, y2)
         if self._editing_enabled:
@@ -114,17 +144,7 @@ class LiveSeatingEditor:
             ]
         else:
             info_lines = [self._status_message]
-        for idx, text in enumerate(info_lines):
-            cv2.putText(
-                frame,
-                text,
-                (10, 24 + idx * 20),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (255, 255, 255),
-                1,
-                cv2.LINE_AA,
-            )
+        self._draw_info_lines(frame, info_lines)
         if self._pending_create and self._create_start_px:
             x1, y1 = self._create_start_px
             x2, y2 = self._last_mouse_position
@@ -179,6 +199,229 @@ class LiveSeatingEditor:
             self._drag_state = None
             self._pending_create = False
             self._status_message = "座席を追加しました"
+
+    # ------------------------------------------------------------------
+    # Text rendering helpers
+    # ------------------------------------------------------------------
+    def _draw_info_lines(self, frame, info_lines: List[str]) -> None:
+        if not info_lines:
+            return
+        needs_unicode = any(not self._is_ascii(text) for text in info_lines)
+        font = self._get_pil_font(self._INFO_FONT_SIZE) if needs_unicode else None
+        if font is None:
+            for idx, text in enumerate(info_lines):
+                cv2.putText(
+                    frame,
+                    text,
+                    (self._INFO_TEXT_LEFT, self._INFO_TEXT_TOP + idx * self._INFO_TEXT_STEP),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (255, 255, 255),
+                    1,
+                    cv2.LINE_AA,
+                )
+            return
+        overlay = self._get_info_overlay(info_lines, font)
+        if overlay is not None:
+            self._blit_overlay(frame, overlay, 0, 0)
+            return
+        self._draw_lines_with_pil(frame, info_lines, font)
+
+    def _draw_lines_with_pil(self, frame, lines: List[str], font) -> None:
+        if Image is None or ImageDraw is None:
+            return
+        try:
+            import numpy as np  # type: ignore
+        except Exception:  # pragma: no cover - optional dependency guard
+            return
+        image = Image.fromarray(frame[:, :, ::-1])
+        draw = ImageDraw.Draw(image)
+        for idx, text in enumerate(lines):
+            draw.text((10, 24 + idx * 20), text, font=font, fill=(255, 255, 255))
+        frame[:] = np.array(image)[:, :, ::-1]
+
+    def _draw_text(self, frame, text: str, position: Tuple[int, int], color: Tuple[int, int, int]) -> None:
+        if self._is_ascii(text) or ImageFont is None:
+            cv2.putText(frame, text, position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+            return
+        font = self._get_pil_font(self._INFO_FONT_SIZE)
+        if font is None:
+            cv2.putText(frame, text, position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+            return
+        overlay = self._get_label_overlay(text, font, color)
+        if overlay is not None:
+            self._blit_overlay(frame, overlay, position[0], position[1])
+            return
+        self._draw_text_with_pil(frame, text, position, color, font)
+
+    def _draw_text_with_pil(self, frame, text: str, position: Tuple[int, int], color, font) -> None:
+        if Image is None or ImageDraw is None:
+            return
+        try:
+            import numpy as np  # type: ignore
+        except Exception:  # pragma: no cover - optional dependency guard
+            return
+        image = Image.fromarray(frame[:, :, ::-1])
+        draw = ImageDraw.Draw(image)
+        draw.text(position, text, font=font, fill=(color[2], color[1], color[0]))
+        frame[:] = np.array(image)[:, :, ::-1]
+
+    def _get_pil_font(self, size: int):
+        if ImageFont is None:
+            return None
+        if self._pil_font is not None and self._pil_font_size == size:
+            return self._pil_font
+        env_path = os.environ.get(self._FONT_ENV_VAR)
+        if env_path:
+            env_font = self._try_load_font(env_path, size)
+            if env_font is not None:
+                self._pil_font = env_font
+                self._pil_font_size = size
+                return env_font
+        for path in self._FONT_CANDIDATES:
+            font = self._try_load_font(path, size)
+            if font is not None:
+                self._pil_font = font
+                self._pil_font_size = size
+                return font
+        try:
+            font = ImageFont.load_default()
+        except Exception:  # pragma: no cover - font load guard
+            return None
+        LOGGER.warning(
+            "Falling back to default PIL font; set %s to a Japanese-capable font if glyphs are missing",
+            self._FONT_ENV_VAR,
+        )
+        self._pil_font = font
+        self._pil_font_size = size
+        return font
+
+    def _try_load_font(self, path: str, size: int):
+        if not Path(path).exists():
+            return None
+        try:
+            font = ImageFont.truetype(path, size=size)
+        except Exception:  # pragma: no cover - font load guard
+            return None
+        LOGGER.info("Using overlay font: %s", path)
+        return font
+
+    def _get_numpy(self):
+        if self._numpy_checked:
+            return self._numpy
+        try:
+            import numpy as np  # type: ignore
+        except Exception:
+            self._numpy = None
+        else:
+            self._numpy = np
+        self._numpy_checked = True
+        return self._numpy
+
+    def _get_info_overlay(self, info_lines: List[str], font):
+        font_key = id(font)
+        key = (tuple(info_lines), font_key)
+        if self._info_overlay_key == key and self._info_overlay is not None:
+            return self._info_overlay
+        overlay = self._build_lines_overlay(info_lines, font, (255, 255, 255))
+        self._info_overlay = overlay
+        self._info_overlay_key = key
+        return overlay
+
+    def _build_lines_overlay(self, lines: List[str], font, color: Tuple[int, int, int]):
+        if Image is None or ImageDraw is None:
+            return None
+        np = self._get_numpy()
+        if np is None:
+            return None
+        if not lines:
+            return None
+        dummy = Image.new("RGBA", (1, 1))
+        draw = ImageDraw.Draw(dummy)
+        max_width = 0
+        max_height = 0
+        for line in lines:
+            bbox = self._text_bbox(draw, line, font)
+            max_width = max(max_width, bbox[2] - bbox[0])
+            max_height = max(max_height, bbox[3] - bbox[1])
+        width = int(self._INFO_TEXT_LEFT + max_width + 10)
+        height = int(self._INFO_TEXT_TOP + (len(lines) - 1) * self._INFO_TEXT_STEP + max_height + 10)
+        image = Image.new("RGBA", (max(1, width), max(1, height)), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        rgba = (color[2], color[1], color[0], 255)
+        for idx, line in enumerate(lines):
+            draw.text(
+                (self._INFO_TEXT_LEFT, self._INFO_TEXT_TOP + idx * self._INFO_TEXT_STEP),
+                line,
+                font=font,
+                fill=rgba,
+            )
+        return np.array(image)
+
+    def _get_label_overlay(self, text: str, font, color: Tuple[int, int, int]):
+        key = (text, color, id(font))
+        overlay = self._label_overlay_cache.get(key)
+        if overlay is not None:
+            return overlay
+        overlay = self._build_text_overlay(text, font, color)
+        if overlay is not None:
+            self._label_overlay_cache[key] = overlay
+        return overlay
+
+    def _build_text_overlay(self, text: str, font, color: Tuple[int, int, int]):
+        if Image is None or ImageDraw is None:
+            return None
+        np = self._get_numpy()
+        if np is None:
+            return None
+        dummy = Image.new("RGBA", (1, 1))
+        draw = ImageDraw.Draw(dummy)
+        bbox = self._text_bbox(draw, text, font)
+        left, top, right, bottom = bbox
+        width = max(1, int(right - left + 2))
+        height = max(1, int(bottom - top + 2))
+        image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        rgba = (color[2], color[1], color[0], 255)
+        draw.text((-left + 1, -top + 1), text, font=font, fill=rgba)
+        return np.array(image)
+
+    def _blit_overlay(self, frame, overlay, x: int, y: int) -> None:
+        np = self._get_numpy()
+        if np is None:
+            return
+        if overlay is None:
+            return
+        overlay_height, overlay_width = overlay.shape[:2]
+        frame_height, frame_width = frame.shape[:2]
+        if overlay_height <= 0 or overlay_width <= 0:
+            return
+        x1 = max(0, x)
+        y1 = max(0, y)
+        x2 = min(frame_width, x + overlay_width)
+        y2 = min(frame_height, y + overlay_height)
+        if x1 >= x2 or y1 >= y2:
+            return
+        overlay_slice = overlay[y1 - y : y2 - y, x1 - x : x2 - x]
+        alpha = overlay_slice[:, :, 3:4] / 255.0
+        frame_slice = frame[y1:y2, x1:x2]
+        frame[y1:y2, x1:x2] = (frame_slice * (1 - alpha) + overlay_slice[:, :, :3] * alpha).astype(frame.dtype)
+
+    @staticmethod
+    def _text_bbox(draw, text: str, font) -> Tuple[int, int, int, int]:
+        bbox_getter = getattr(draw, "textbbox", None)
+        if callable(bbox_getter):
+            return bbox_getter((0, 0), text, font=font)
+        width, height = draw.textsize(text, font=font)
+        return (0, 0, width, height)
+
+    @staticmethod
+    def _is_ascii(text: str) -> bool:
+        try:
+            text.encode("ascii")
+        except UnicodeEncodeError:
+            return False
+        return True
 
     def _start_drag(self, x: int, y: int) -> None:
         index, handle = self._pick_seat(x, y)
@@ -349,5 +592,3 @@ class LiveSeatingEditor:
 
 
 __all__ = ["LiveSeatingEditor"]
-
-

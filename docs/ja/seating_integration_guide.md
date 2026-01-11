@@ -24,7 +24,7 @@
 
 1. 依存関係をインストールします。
    ```bash
-   python -m pip install mediapipe opencv-python websockets
+   python -m pip install mediapipe opencv-python websockets pillow
    ```
 2. PoseCaptureApp を `--seating-config` オプション付きで起動します。
    ```bash
@@ -83,4 +83,3 @@
 - 座席境界は現場で微調整し、観客の身長差に応じて `SeatingLayout` を更新してください。
 - WebSocket の遅延が気になる場合は UDP 転送に切り替えることも可能です（`--transport udp --endpoint host:port`）。
 - `ShadowSeatDirector._glareConfidenceThreshold` や `_movementDuration` を調整して、会場の雰囲気に合わせた演出を作り込めます。
-

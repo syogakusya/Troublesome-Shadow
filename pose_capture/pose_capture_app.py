@@ -28,6 +28,7 @@ class CaptureConfig:
     seating_layout: Optional[SeatingLayout] = None
     mode: str = "shadow"
     live_seating_editor: bool = True
+    seating_config_path: Optional[Path] = None
 
 
 class PoseCaptureApp:
@@ -106,6 +107,7 @@ class PoseCaptureApp:
 
         self._seating_layout = layout
         self.config.seating_layout = layout
+        self._persist_seating_layout(layout)
         updater = getattr(self.config.provider, "update_live_seating_layout", None)
         if callable(updater):
             updater(layout)
@@ -113,6 +115,7 @@ class PoseCaptureApp:
     def _handle_live_layout_update(self, layout: Optional[SeatingLayout]) -> None:
         self._seating_layout = layout
         self.config.seating_layout = layout
+        self._persist_seating_layout(layout)
 
     def _maybe_enable_live_editor(self) -> None:
         if self._live_editor_enabled:
@@ -129,6 +132,35 @@ class PoseCaptureApp:
             LOGGER.exception("Failed to configure live seating editor: %s", exc)
             return
         self._live_editor_enabled = bool(success)
+
+    def _persist_seating_layout(self, layout: Optional[SeatingLayout]) -> None:
+        if layout is None:
+            return
+        path = self.config.seating_config_path
+        if not path:
+            return
+        payload = self._serialize_seating_layout(layout)
+        try:
+            path.write_text(json.dumps(payload, indent=2))
+        except Exception as exc:  # pragma: no cover - IO errors
+            LOGGER.error("Failed to save seating layout to %s: %s", path, exc)
+
+    @staticmethod
+    def _serialize_seating_layout(layout: SeatingLayout) -> dict:
+        return {
+            "seats": [
+                {
+                    "id": seat.seat_id,
+                    "bounds": {
+                        "xMin": seat.x_min,
+                        "xMax": seat.x_max,
+                        "yMin": seat.y_min,
+                        "yMax": seat.y_max,
+                    },
+                }
+                for seat in layout.seats
+            ]
+        }
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -245,6 +277,7 @@ def build_config_from_args(args: "argparse.Namespace") -> CaptureConfig:
         seating_layout=seating_layout,
         mode=getattr(args, "mode", "shadow"),
         live_seating_editor=getattr(args, "live_seating_editor", True),
+        seating_config_path=getattr(args, "seating_config", None),
     )
 
 

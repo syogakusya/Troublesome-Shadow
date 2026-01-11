@@ -44,10 +44,10 @@
 
 ## Python キャプチャ環境の準備
 
-MediaPipe と OpenCV、WebSocket クライアントをインストールします。
+MediaPipe と OpenCV、WebSocket クライアント、Pillow をインストールします。
 
 ```bash
-python -m pip install mediapipe opencv-python websockets
+python -m pip install mediapipe opencv-python websockets pillow
 ```
 
 Unity へ送信を開始するには次のように実行します（`--preview` を付けるとプレビューウィンドウが表示されます）。
@@ -60,6 +60,12 @@ python -m pose_capture.pose_capture_app \
   --camera 0 \
   --frame-interval 0.016 \
   --preview
+```
+
+プレビュー左上の日本語が文字化けする場合は、描画フォントを明示してください（macOS の例）。
+
+```bash
+export POSE_CAPTURE_OVERLAY_FONT="/System/Library/Fonts/Hiragino Sans GB.ttc"
 ```
 
 主な引数:
