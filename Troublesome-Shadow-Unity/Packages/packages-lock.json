@@ -9,6 +9,12 @@
       },
       "hash": "4c9beaffdefadee03c07f00eb3e3b6c5294fc99d"
     },
+    "com.mibdev.fullscreen-editor": {
+      "version": "file:com.mibdev.fullscreen-editor",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
     "com.unity.behavior": {
       "version": "1.0.13",
       "depth": 0,

@@ -1,4 +1,3 @@
-"""Pose capture application entry point."""
 from __future__ import annotations
 
 import argparse
@@ -18,7 +17,6 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class CaptureConfig:
-    """Runtime configuration for the capture application."""
 
     provider: SkeletonProvider
     transport: SkeletonTransport
@@ -32,7 +30,6 @@ class CaptureConfig:
 
 
 class PoseCaptureApp:
-    """Main loop that forwards skeleton data from providers to transports."""
 
     def __init__(self, config: CaptureConfig) -> None:
         self.config = config

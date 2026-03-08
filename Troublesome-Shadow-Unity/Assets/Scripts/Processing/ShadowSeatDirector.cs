@@ -93,12 +93,15 @@ namespace PoseRuntime
         public float _globalHeightOffset = 0f;
         public float _seatSitOffset = 0f;
         public float _seatPostSitOffset = 0f;
+        public float _floorSitOffset = 0f;
+        public float _lookTargetYOffset = 0f;
 
         [Header("Timing")]
         public float _movementDuration = 0.75f;
         public float _lookDuration = 0.35f;
         public float _postMoveLookDuration = 1.5f;
         public int _sameSeatCollisionThreshold = 3;
+        public float _sameSeatCollisionResetSeconds = 10f;
 
         [Header("Walking Animation")]
         public bool _useWalkingAnimation = true;
@@ -136,6 +139,7 @@ namespace PoseRuntime
         [Header("Debug Seating Control")]
         public bool _enableDebugSeating = false;
         public KeyCode _debugToggleKey = KeyCode.F1;
+        public KeyCode _debugSameSeatCollisionKey = KeyCode.F2;
         private Dictionary<string, bool> _debugOccupancy = new Dictionary<string, bool>();
 
         private readonly Dictionary<string, ShadowSeat> _seatLookup = new Dictionary<string, ShadowSeat>(StringComparer.OrdinalIgnoreCase);
@@ -147,8 +151,10 @@ namespace PoseRuntime
         private bool _isMoving;
         private bool _isActive;
         private int _sameSeatCollisionCount;
+        private float _lastSameSeatCollisionTime = -1f;
 
         private Transform _activeLookTarget;
+        private bool _activeLookTargetIsAnchor;
         private float _lookUntilTime = -1f;
         private bool _keepLooking;
 
@@ -331,6 +337,12 @@ namespace PoseRuntime
             }
         }
 
+        [ContextMenu("Start Shadow")]
+        private void StartShadowFromInspector()
+        {
+            StartShadow();
+        }
+
         private void Update()
         {
             if (Input.GetKeyDown(_debugToggleKey))
@@ -342,6 +354,7 @@ namespace PoseRuntime
                     Debug.Log("[ShadowSeatDirector] 操作方法:");
                     Debug.Log("  数字キー 1-9: 対応する座席を占有/解放");
                     Debug.Log("  数字キー 0: 全座席を解放");
+                    Debug.Log($"  {_debugSameSeatCollisionKey}: 同席イベントを発生");
                 }
             }
 
@@ -351,6 +364,7 @@ namespace PoseRuntime
             }
 
             UpdateLookTarget();
+            UpdateSameSeatCollisionResetTimer();
         }
 
         private void LateUpdate()
@@ -406,6 +420,11 @@ namespace PoseRuntime
 
         private void HandleDebugInput()
         {
+            if (Input.GetKeyDown(_debugSameSeatCollisionKey))
+            {
+                TriggerSameSeatCollisionDebug();
+            }
+
             for (int i = 0; i < 10; i++)
             {
                 var keyCode = KeyCode.Alpha0 + i;
@@ -446,6 +465,23 @@ namespace PoseRuntime
 
             var snapshot = CreateDebugSnapshot();
             EvaluateShadowResponse(snapshot);
+        }
+
+        private void TriggerSameSeatCollisionDebug()
+        {
+            var seat = _currentSeat ?? _defaultSeat;
+            if (seat == null)
+            {
+                Debug.LogWarning("[ShadowSeatDirector] 同席イベント: 有効な座席が見つかりません。");
+                return;
+            }
+
+            if (_debugLogSeating)
+            {
+                Debug.Log($"[ShadowSeatDirector] デバッグ同席イベント: 座席={seat._id}");
+            }
+
+            HandleSeatCollision(seat, false);
         }
 
         private void ClearAllDebugOccupancy()
@@ -603,7 +639,6 @@ namespace PoseRuntime
 
             if (humanSeat == null)
             {
-                ResetSameSeatCounter();
                 ClearLookTarget();
                 return;
             }
@@ -613,8 +648,6 @@ namespace PoseRuntime
                 HandleSeatCollision(humanSeat, false);
                 return;
             }
-
-            ResetSameSeatCounter();
 
             if (AreNeighbours(_currentSeat, humanSeat))
             {
@@ -648,6 +681,11 @@ namespace PoseRuntime
             else
             {
                 _sameSeatCollisionCount++;
+                _lastSameSeatCollisionTime = Time.time;
+                if (_debugLogSeating)
+                {
+                    Debug.Log($"[ShadowSeatDirector] 同席カウント更新: {_sameSeatCollisionCount}/{_sameSeatCollisionThreshold} (座席={humanSeat._id})");
+                }
             }
 
             if (!triggeredByTouch && _sameSeatCollisionCount >= _sameSeatCollisionThreshold)
@@ -686,8 +724,6 @@ namespace PoseRuntime
             {
                 return;
             }
-
-            ResetSameSeatCounter();
 
             if (_debugLogSeating)
             {
@@ -737,7 +773,93 @@ namespace PoseRuntime
 
         private void ResetSameSeatCounter()
         {
+            if (_debugLogSeating && _sameSeatCollisionCount > 0)
+            {
+                Debug.Log($"[ShadowSeatDirector] 同席カウントをリセット: {_sameSeatCollisionCount} -> 0");
+            }
             _sameSeatCollisionCount = 0;
+            _lastSameSeatCollisionTime = -1f;
+        }
+
+        private void UpdateSameSeatCollisionResetTimer()
+        {
+            if (_sameSeatCollisionCount <= 0 || _sameSeatCollisionResetSeconds <= 0f || _lastSameSeatCollisionTime < 0f)
+            {
+                return;
+            }
+
+            var elapsed = Time.time - _lastSameSeatCollisionTime;
+            if (elapsed < _sameSeatCollisionResetSeconds)
+            {
+                return;
+            }
+
+            if (_debugLogSeating)
+            {
+                Debug.Log($"[ShadowSeatDirector] 同席カウントを経過時間でリセット: {elapsed:0.0}s >= {_sameSeatCollisionResetSeconds:0.0}s");
+            }
+
+            ResetSameSeatCounter();
+            TryReturnToSeatAfterCooldown();
+        }
+
+        private void TryReturnToSeatAfterCooldown()
+        {
+            if (!_isActive || !_onFloor || _isMoving || _reactionRoutine != null)
+            {
+                return;
+            }
+
+            if (IsAnyHumanSeated())
+            {
+                return;
+            }
+
+            var targetSeat = _defaultSeat ?? PickStartSeat();
+            if (targetSeat == null)
+            {
+                return;
+            }
+
+            if (_debugLogSeating)
+            {
+                Debug.Log($"[ShadowSeatDirector] 同席リセット後に席へ戻ります: {targetSeat._id}");
+            }
+
+            StartReaction(ReturnToSeatFromFloorRoutine(targetSeat));
+        }
+
+        private bool IsAnyHumanSeated()
+        {
+            foreach (var seat in _seats)
+            {
+                if (seat != null && seat._isHumanOccupied)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private IEnumerator ReturnToSeatFromFloorRoutine(ShadowSeat targetSeat)
+        {
+            if (targetSeat == null)
+            {
+                yield break;
+            }
+
+            if (_animator == null || IsAvatarMode())
+            {
+                MoveShadowToSeat(targetSeat, _animSitTrigger, true);
+                yield break;
+            }
+
+            ClearLookTarget();
+            yield return StartCoroutine(WaitForStandupAnimation());
+
+            MoveShadowToSeat(targetSeat, _animSitTrigger, true);
+            yield return StartCoroutine(WaitForMovementCompletion());
         }
 
         private bool IsSeatedIdle()
@@ -776,24 +898,26 @@ namespace PoseRuntime
             StartReaction(WaitForSurprisedThenStandupThenMove(target, humanSeat, true, true));
         }
 
-        private Transform ResolveLookTarget(ShadowSeat seat)
+        private Transform ResolveLookTarget(ShadowSeat seat, out bool isAnchor)
         {
+            isAnchor = false;
             if (seat == null)
             {
                 return null;
             }
 
-            if (seat._lookTarget != null)
+            if (seat._anchor != null)
             {
-                return seat._lookTarget;
+                isAnchor = true;
+                return seat._anchor;
             }
 
-            return seat._anchor != null ? seat._anchor : null;
+            return null;
         }
 
         private void SetLookTarget(ShadowSeat seat, float duration, bool persist)
         {
-            var target = ResolveLookTarget(seat);
+            var target = ResolveLookTarget(seat, out var isAnchor);
             if (target == null)
             {
                 ClearLookTarget();
@@ -801,6 +925,7 @@ namespace PoseRuntime
             }
 
             _activeLookTarget = target;
+            _activeLookTargetIsAnchor = isAnchor;
             _keepLooking = persist;
 
             if (persist)
@@ -816,6 +941,7 @@ namespace PoseRuntime
         private void ClearLookTarget()
         {
             _activeLookTarget = null;
+            _activeLookTargetIsAnchor = false;
             _keepLooking = false;
             _lookUntilTime = -1f;
             _lookAtIK?.ClearTarget();
@@ -846,7 +972,13 @@ namespace PoseRuntime
                 return;
             }
 
-            _lookAtIK.SetTarget(_activeLookTarget.position);
+            var targetPosition = _activeLookTarget.position;
+            if (_activeLookTargetIsAnchor && Mathf.Abs(_lookTargetYOffset) > Mathf.Epsilon)
+            {
+                targetPosition += Vector3.up * _lookTargetYOffset;
+            }
+
+            _lookAtIK.SetTarget(targetPosition);
         }
 
         private void ApplyAnimatorTweaks()
@@ -890,6 +1022,31 @@ namespace PoseRuntime
 
             return basePosition - forward * offset;
         }
+
+        private Vector3 GetFloorPosition(float offset)
+        {
+            if (_floorAnchor == null)
+            {
+                return Vector3.zero;
+            }
+
+            var basePosition = _floorAnchor.position + Vector3.up * _globalHeightOffset;
+            if (Mathf.Abs(offset) <= Mathf.Epsilon)
+            {
+                return basePosition;
+            }
+
+            var rotation = ResolveFloorRotation();
+            var forward = rotation * Vector3.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude > 0.0001f)
+            {
+                forward.Normalize();
+            }
+
+            return basePosition - forward * offset;
+        }
+
         private void MoveShadowToSeat(ShadowSeat seat, string trigger, bool force)
         {
             var arrivalTrigger = string.IsNullOrEmpty(trigger) ? _animSitTrigger : trigger;
@@ -958,7 +1115,7 @@ namespace PoseRuntime
             }
         }
 
-        private void MoveShadowToFloor()
+        private void MoveShadowToFloor(bool skipStandup = false)
         {
             if (_floorAnchor == null)
             {
@@ -967,34 +1124,12 @@ namespace PoseRuntime
 
             ClearLookTarget();
 
-            var shouldStandup = !_onFloor && _currentSeat != null && _animator != null && !IsAvatarMode();
+            var shouldStandup = !skipStandup && !_onFloor && _currentSeat != null && _animator != null && !IsAvatarMode();
 
-            foreach (var seat in _seats)
-            {
-                if (seat != null)
-                {
-                    seat._isShadowOccupied = false;
-                }
-            }
-
-            _currentSeat = null;
-            _onFloor = true;
-
-            if (_animator != null && !IsAvatarMode())
-            {
-                if (!string.IsNullOrEmpty(_animOnFloorParam))
-                {
-                    if (_debugLogAnimations)
-                    {
-                        Debug.Log($"[ShadowSeatDirector] アニメーションパラメータ変更: {_animOnFloorParam} = true");
-                    }
-                    _animator.SetBool(_animOnFloorParam, true);
-                }
-
-            }
+            PrepareFloorState();
 
             var targetRotation = ResolveFloorRotation();
-            var targetPosition = _floorAnchor.position + Vector3.up * _globalHeightOffset;
+            var targetPosition = GetFloorPosition(_floorSitOffset);
 
             if (shouldStandup)
             {
@@ -1007,6 +1142,29 @@ namespace PoseRuntime
             else
             {
                 BeginMovement(targetPosition, targetRotation, _movementDuration);
+            }
+        }
+
+        private void PrepareFloorState()
+        {
+            foreach (var seat in _seats)
+            {
+                if (seat != null)
+                {
+                    seat._isShadowOccupied = false;
+                }
+            }
+
+            _currentSeat = null;
+            _onFloor = true;
+
+            if (_animator != null && !IsAvatarMode() && !string.IsNullOrEmpty(_animOnFloorParam))
+            {
+                if (_debugLogAnimations)
+                {
+                    Debug.Log($"[ShadowSeatDirector] アニメーションパラメータ変更: {_animOnFloorParam} = true");
+                }
+                _animator.SetBool(_animOnFloorParam, true);
             }
         }
 
@@ -1420,6 +1578,75 @@ namespace PoseRuntime
             return stateInfo.IsName(stateName);
         }
 
+        private IEnumerator WaitForStandupAnimation()
+        {
+            var canPlayStandup = _animator != null && !IsAvatarMode() && !string.IsNullOrEmpty(_animStandupStateName) && !string.IsNullOrEmpty(_animStandupTrigger);
+
+            if (!canPlayStandup)
+            {
+                yield break;
+            }
+
+            TriggerStandupAnimation();
+            yield return null;
+
+            var maxWaitTime = 5.0f;
+            var elapsedTime = 0f;
+            var standupStarted = false;
+
+            while (elapsedTime < maxWaitTime)
+            {
+                var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
+
+                var isStandup = IsInStandupState();
+
+                if (!standupStarted && isStandup)
+                {
+                    standupStarted = true;
+                    if (_debugLogAnimations)
+                    {
+                        Debug.Log($"[ShadowSeatDirector] standupアニメーション開始を検出");
+                    }
+                }
+
+                if (standupStarted && isStandup)
+                {
+                    if (!stateInfo.loop && stateInfo.normalizedTime >= 0.99f)
+                    {
+                        if (_debugLogAnimations)
+                        {
+                            Debug.Log($"[ShadowSeatDirector] standupアニメーション完了");
+                        }
+                        break;
+                    }
+                }
+                else if (standupStarted && !isStandup)
+                {
+                    if (_debugLogAnimations)
+                    {
+                        Debug.Log($"[ShadowSeatDirector] standupアニメーションから遷移しました");
+                    }
+                    break;
+                }
+
+                elapsedTime += Time.deltaTime;
+                yield return null;
+            }
+
+            if (elapsedTime >= maxWaitTime)
+            {
+                if (_debugLogAnimations)
+                {
+                    Debug.Log($"[ShadowSeatDirector] standupアニメーション待機タイムアウト");
+                }
+            }
+
+            if (_animator != null && !string.IsNullOrEmpty(_animStandupTrigger))
+            {
+                _animator.ResetTrigger(_animStandupTrigger);
+            }
+        }
+
         private IEnumerator WaitForStandupAnimationThenMove(Vector3 targetPosition, Quaternion targetRotation, float duration, ShadowSeat targetSeat = null, string arrivalTrigger = null)
         {
             var canPlayStandup = _animator != null && !IsAvatarMode() && !string.IsNullOrEmpty(_animStandupStateName) && !string.IsNullOrEmpty(_animStandupTrigger);
@@ -1671,8 +1898,16 @@ namespace PoseRuntime
             }
             else
             {
+                if (_floorAnchor == null)
+                {
+                    yield break;
+                }
+
+                ClearLookTarget();
+                PrepareFloorState();
+
                 var targetRotation = ResolveFloorRotation();
-                var targetPosition = _floorAnchor.position + Vector3.up * _globalHeightOffset;
+                var targetPosition = GetFloorPosition(_floorSitOffset);
                 yield return StartCoroutine(WaitForStandupAnimationThenMove(targetPosition, targetRotation, _movementDuration, null, null));
             }
         }
@@ -1759,6 +1994,11 @@ namespace PoseRuntime
 
             ClearLookTarget();
 
+            if (!_onFloor && _currentSeat != null)
+            {
+                yield return StartCoroutine(WaitForStandupAnimation());
+            }
+
             if (_debugLogAnimations)
             {
                 Debug.Log("[ShadowSeatDirector] Frustratedアニメーションを開始");
@@ -1767,8 +2007,7 @@ namespace PoseRuntime
 
             yield return StartCoroutine(WaitForAnimationState("Frustrated", 5.0f));
 
-            var targetRotation = ResolveFloorRotation();
-            yield return StartCoroutine(WaitForStandupAnimationThenMove(_floorAnchor.position, targetRotation, _movementDuration, null));
+            MoveShadowToFloor(true);
             yield return StartCoroutine(WaitForMovementCompletion());
         }
     }
